@@ -12,3 +12,4 @@
 # Local agent tooling state (machine-specific paths)
 /.atl/
 /.engram/
+/.omc/
