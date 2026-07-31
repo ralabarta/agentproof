@@ -1,0 +1,81 @@
+schema: spec-driven
+
+context: |
+  Product: AgentProof, a local-first flight recorder and merge-safety evidence layer for coding agents.
+  MVP: Claude Code and Codex session capture tied to commits; Tree-sitter impact analysis; test-result ingestion.
+  Safety: Secret and high-risk change detection, static HTML and Markdown reports, and GitHub Action PR comments.
+  Non-goals: Cloud platform, enterprise teams or permissions, billing, marketplace, an owned coding agent, and broad provider support.
+  Tech stack: Unresolved; the project contains no application scaffold or dependency manifest.
+  Architecture: Unresolved; preserve local-first operation and commit-linked evidence as product constraints.
+  Testing: Strict TDD policy is enabled globally, but no test runner, coverage, lint, type-check, or formatting tools are installed yet.
+  Persistence: Hybrid OpenSpec files and Engram observations.
+
+sdd:
+  execution_mode: interactive
+  artifact_store: hybrid
+  delivery_strategy: auto-chain
+  review_budget_lines: 800
+
+strict_tdd: true
+
+testing:
+  detected: "2026-07-30"
+  status: unavailable_pending_stack_selection
+  test_runner:
+    available: false
+    framework: null
+    command: null
+  layers:
+    unit:
+      available: false
+      tool: null
+    integration:
+      available: false
+      tool: null
+    e2e:
+      available: false
+      tool: null
+  coverage:
+    available: false
+    command: null
+    threshold: 0
+  quality:
+    linter:
+      available: false
+      command: null
+    type_checker:
+      available: false
+      command: null
+    formatter:
+      available: false
+      command: null
+  note: Strict TDD remains the governing policy; select and configure tooling when the implementation stack is chosen.
+
+rules:
+  proposal:
+    - Keep the MVP and explicit non-goals visible.
+    - Include rollback plans for risky changes.
+  specs:
+    - Use RFC 2119 keywords for normative requirements.
+    - Use Given/When/Then for scenarios.
+    - Preserve local-first and commit-linked evidence constraints.
+  design:
+    - Record the selected stack and architecture rationale before implementation.
+    - Include sequence diagrams for session capture, commit linkage, and report generation when applicable.
+    - Include threat analysis for secrets, untrusted repository content, and CI inputs.
+  tasks:
+    - Group work into independently reviewable phases.
+    - Keep each task completable in one session.
+    - Respect the 800-line review budget and auto-chain delivery strategy.
+  apply:
+    guidelines:
+      - Do not scaffold an application until the stack is explicitly selected.
+      - Follow RED-GREEN-REFACTOR once a test runner is configured.
+    tdd: true
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.
