@@ -23,7 +23,7 @@ Hashes detect modification after capture. They do not prove authenticity, author
 | `internal/gitx` | Git snapshots, committed/working changes, patches, and merge-base association |
 | `internal/testresult` | Data-only JUnit and Go test2json ingestion |
 | `internal/evidence` | Canonical source census, states, confidence, and bundle identity |
-| `internal/impact` | Bounded Go import graph and unsupported-language reporting |
+| `internal/impact` | Bounded Go, TypeScript/JavaScript, and Python import graph and unsupported-language reporting |
 | `internal/scan` | Versioned deterministic secret and high-risk rules |
 | `internal/report` | Escaped Markdown and offline CSP-constrained HTML |
 | `internal/safefile` | Symlink-resistant atomic local publication |
@@ -46,7 +46,7 @@ Raw command output is retained only with `--retain-raw`.
 ### Verify
 
 1. Load a recorded run or associate a Git range through its merge base.
-2. Scan captured added lines and build a bounded Go import graph.
+2. Scan captured added lines and build a bounded first-party import graph over Go, TypeScript/JavaScript, and Python sources.
 3. Ingest declared JUnit XML or Go test2json as untrusted data; execute nothing.
 4. Resolve every discovered or policy-required source to one evidence state.
 5. Canonicalize and order manifest records.

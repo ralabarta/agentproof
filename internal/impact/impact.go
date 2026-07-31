@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ func Analyze(root string, changes []evidence.Change) evidence.Impact {
 			unsupported = append(unsupported, filepath.ToSlash(change.Path))
 		}
 	}
-	graph := goEdges(root)
+	graph := buildGraph(root)
 	edges := graph.edges
 	reverse := map[string][]string{}
 	for _, edge := range edges {
@@ -59,7 +60,7 @@ func Analyze(root string, changes []evidence.Change) evidence.Impact {
 		}
 	}
 	result := evidence.Impact{
-		Edges: edges, Radius: radius, Analyzer: "go/parser@stdlib+path-graph/v1",
+		Edges: edges, Radius: radius, Analyzer: "go/parser@stdlib+ts-js-py/regex-imports@v1+path-graph/v1",
 		Complete: limitReached == "" && len(graph.unknown) == 0, Unsupported: unsupported,
 		Unknown: graph.unknown, FilesExamined: graph.filesExamined, BytesParsed: graph.bytesParsed,
 		LimitReached: limitReached,
@@ -98,22 +99,41 @@ type graphResult struct {
 	limitReached  string
 }
 
-func goEdges(root string) graphResult {
+// buildGraph walks the repository once, indexing first-party source files, then
+// derives component edges from the imports of every supported language. Go uses
+// the standard-library parser; TypeScript, JavaScript, and Python use bounded
+// regex extraction resolved against the file index.
+func buildGraph(root string) graphResult {
 	module := readModule(filepath.Join(root, "go.mod"))
-	if module == "" {
-		return graphResult{unknown: []string{"go.mod: module path unavailable"}}
-	}
-	unique := map[string]evidence.Edge{}
 	result := graphResult{}
+
+	type sourceFile struct {
+		rel  string
+		abs  string
+		kind sourceKind
+	}
+	var sources []sourceFile
+	files := map[string]bool{}
+
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			result.unknown = append(result.unknown, "unreadable path: "+filepath.ToSlash(path))
 			return nil
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".agentproof" || d.Name() == "vendor") {
-			return filepath.SkipDir
+		if d.IsDir() {
+			if skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") {
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			result.unknown = append(result.unknown, "unresolvable path: "+filepath.ToSlash(path))
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		kind := classify(rel)
+		if kind == kindOther {
 			return nil
 		}
 		result.filesExamined++
@@ -123,7 +143,7 @@ func goEdges(root string) graphResult {
 		}
 		info, infoErr := d.Info()
 		if infoErr != nil {
-			result.unknown = append(result.unknown, "unreadable file metadata: "+filepath.ToSlash(path))
+			result.unknown = append(result.unknown, "unreadable file metadata: "+rel)
 			return nil
 		}
 		result.bytesParsed += info.Size()
@@ -131,33 +151,84 @@ func goEdges(root string) graphResult {
 			result.limitReached = "parsed-bytes:536870912"
 			return fs.SkipAll
 		}
-		file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-		if parseErr != nil {
-			rel, _ := filepath.Rel(root, path)
-			result.unknown = append(result.unknown, "parse failed: "+filepath.ToSlash(rel))
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		from := component(rel)
-		for _, imported := range file.Imports {
-			value, unquoteErr := strconv.Unquote(imported.Path.Value)
-			if unquoteErr != nil || (value != module && !strings.HasPrefix(value, module+"/")) {
-				continue
-			}
-			relImport := strings.TrimPrefix(strings.TrimPrefix(value, module), "/")
-			to := component(filepath.Join(relImport, "package.go"))
-			if from == to {
-				continue
-			}
-			key := from + "\x00" + to
-			unique[key] = evidence.Edge{From: from, To: to}
-			if len(unique) > 1_000_000 {
-				result.limitReached = "edges:1000000"
-				return fs.SkipAll
-			}
-		}
+		files[rel] = true
+		sources = append(sources, sourceFile{rel: rel, abs: path, kind: kind})
 		return nil
 	})
+
+	if module == "" {
+		for _, source := range sources {
+			if source.kind == kindGo {
+				result.unknown = append(result.unknown, "go.mod: module path unavailable")
+				break
+			}
+		}
+	}
+
+	unique := map[string]evidence.Edge{}
+	aliases := loadWebAliases(root)
+	addEdge := func(fromRel, toRel string) bool {
+		from, to := component(fromRel), component(toRel)
+		if from == to {
+			return true
+		}
+		unique[from+"\x00"+to] = evidence.Edge{From: from, To: to}
+		if len(unique) > 1_000_000 {
+			result.limitReached = "edges:1000000"
+			return false
+		}
+		return true
+	}
+
+	for _, source := range sources {
+		if result.limitReached == "edges:1000000" {
+			break
+		}
+		switch source.kind {
+		case kindGo:
+			if module == "" {
+				continue
+			}
+			file, parseErr := parser.ParseFile(token.NewFileSet(), source.abs, nil, parser.ImportsOnly)
+			if parseErr != nil {
+				result.unknown = append(result.unknown, "parse failed: "+source.rel)
+				continue
+			}
+			for _, imported := range file.Imports {
+				value, unquoteErr := strconv.Unquote(imported.Path.Value)
+				if unquoteErr != nil || (value != module && !strings.HasPrefix(value, module+"/")) {
+					continue
+				}
+				relImport := strings.TrimPrefix(strings.TrimPrefix(value, module), "/")
+				if !addEdge(source.rel, filepath.Join(relImport, "package.go")) {
+					break
+				}
+			}
+		case kindWeb, kindPython:
+			content, readErr := readBounded(source.abs)
+			if readErr != nil {
+				result.unknown = append(result.unknown, "unreadable source: "+source.rel)
+				continue
+			}
+			specs := webSpecifiers(content)
+			if source.kind == kindPython {
+				specs = pythonSpecifiers(content)
+			}
+			for _, spec := range specs {
+				resolved := resolveWeb(files, aliases, source.rel, spec)
+				if source.kind == kindPython {
+					resolved = resolvePython(files, source.rel, spec)
+				}
+				if resolved == "" {
+					continue
+				}
+				if !addEdge(source.rel, resolved) {
+					break
+				}
+			}
+		}
+	}
+
 	result.edges = make([]evidence.Edge, 0, len(unique))
 	for _, edge := range unique {
 		result.edges = append(result.edges, edge)
@@ -171,9 +242,24 @@ func goEdges(root string) graphResult {
 	return result
 }
 
+// readBounded reads at most maxSourceFileBytes so a generated or minified file
+// cannot exhaust memory. A truncated read only costs later edges, never safety.
+func readBounded(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxSourceFileBytes))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 func unsupportedCode(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java", ".cs", ".rb", ".php":
+	case ".rs", ".java", ".cs", ".rb", ".php", ".kt", ".swift", ".scala":
 		return true
 	default:
 		return false

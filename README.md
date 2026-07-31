@@ -161,11 +161,12 @@ The Action uses read-only repository permissions, emits machine-readable outputs
 ## Current analysis
 
 - Go imports are analyzed with the standard Go parser.
+- TypeScript, JavaScript, and Python imports are extracted lexically and resolved against the on-disk file index, so only first-party files enter the graph. TypeScript `baseUrl` and `paths` aliases, directory `index` files, and ESM `.js` specifiers that resolve to `.ts` sources are handled; `node_modules`, `vendor`, and build output are never traversed.
 - Traversal is deterministic and bounded to 20,000 files, 512 MiB, 1,000,000 edges, and depth 5.
-- TypeScript, JavaScript, Python, Rust, Java, C#, Ruby, and PHP changes are reported as unsupported rather than as zero impact.
+- Rust, Java, C#, Ruby, PHP, Kotlin, Swift, and Scala changes are reported as unsupported rather than as zero impact.
 - Built-in rules cover secret-like additions and high-risk paths including authentication, migrations, dependency manifests, environment configuration, APIs, and CI workflows.
 
-Tree-sitter adapters for additional languages, SARIF, Ed25519/Sigstore signing, test-to-change mapping, and versioned cost tables remain future work.
+Adapters for the remaining languages, SARIF, Ed25519/Sigstore signing, test-to-change mapping, and versioned cost tables remain future work.
 
 ## Privacy and trust model
 
