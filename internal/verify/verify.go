@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -72,7 +73,7 @@ func Run(cwd string, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("serialize evidence manifest: %w", err)
 	}
 	run.BundleID = bundleID
-	run.Integrity = "passed"
+	run.Integrity = integrityOf(manifestBytes)
 	run.Completeness = manifest.Completeness()
 	if run.Model == "" && len(run.Sessions) > 0 && len(run.Sessions[0].Models) > 0 {
 		run.Model = run.Sessions[0].Models[0]
@@ -144,7 +145,10 @@ func loadRun(root, base string) (evidence.Run, string, error) {
 	if json.Unmarshal(latestBytes, &latest) != nil || latest["record"] == "" {
 		return evidence.Run{}, "", errors.New("invalid .agentproof/latest.json")
 	}
-	recordPath := filepath.Join(root, config.DirName, filepath.FromSlash(latest["record"]))
+	recordPath, err := containedPath(filepath.Join(root, config.DirName), latest["record"])
+	if err != nil {
+		return evidence.Run{}, "", err
+	}
 	recordBytes, err := os.ReadFile(recordPath)
 	if err != nil {
 		return evidence.Run{}, "", err
@@ -161,11 +165,47 @@ func loadRun(root, base string) (evidence.Run, string, error) {
 	return run, string(patchBytes), nil
 }
 
+// latest.json is repository content, so its record locator is untrusted input:
+// resolve it and confirm it stays inside the evidence directory.
+func containedPath(dir, declared string) (string, error) {
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", errors.New("cannot resolve evidence directory")
+	}
+	full, err := filepath.Abs(filepath.Join(dirAbs, filepath.FromSlash(declared)))
+	if err != nil {
+		return "", errors.New("cannot resolve recorded run path")
+	}
+	rel, err := filepath.Rel(dirAbs, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("recorded run path escapes the evidence directory")
+	}
+	return full, nil
+}
+
 func manifestRecords(run evidence.Run, patch string, testRecords []evidence.Record) []evidence.Record {
-	records := []evidence.Record{{
+	// An empty patch still hashes to a valid sha256, so the state must be
+	// derived from whether content was actually captured — never asserted.
+	patchRecord := evidence.Record{
 		Locator: "git/changes.patch", State: evidence.Observed, Required: true, Discovered: true,
 		Digest: digest([]byte(patch)), Confidence: evidence.Confidence{Score: linkageScore(run.Repository.DirtyBefore), Reasons: linkageReasons(run.Repository.DirtyBefore)},
-	}}
+	}
+	if patch == "" {
+		if len(run.Repository.Changes) == 0 {
+			patchRecord.State = evidence.NotObserved
+			patchRecord.Required = false
+			patchRecord.Discovered = false
+			patchRecord.Digest = ""
+			patchRecord.Reason = "the range contains no changes, so there is no patch to capture"
+			patchRecord.Confidence = evidence.Confidence{Score: 100, Reasons: []string{"empty-range"}}
+		} else {
+			patchRecord.State = evidence.Missing
+			patchRecord.Digest = ""
+			patchRecord.Reason = "changes were detected but no patch content was captured"
+			patchRecord.Confidence = evidence.Confidence{Score: 0, Reasons: []string{"patch-capture-failed"}}
+		}
+	}
+	records := []evidence.Record{patchRecord}
 	if len(run.Sessions) == 0 {
 		records = append(records, evidence.Record{
 			Locator: "sessions/native", State: evidence.NotObserved, Reason: "no native session artifact was discovered",
@@ -196,6 +236,31 @@ func manifestRecords(run evidence.Run, patch string, testRecords []evidence.Reco
 	}
 	records = append(records, testRecords...)
 	return records
+}
+
+// Integrity is a reviewer-facing claim, so recompute the canonical identity
+// from the emitted bytes instead of asserting success beside them.
+func integrityOf(manifestBytes []byte) string {
+	decoder := json.NewDecoder(bytes.NewReader(manifestBytes))
+	decoder.UseNumber()
+	var emitted map[string]any
+	if err := decoder.Decode(&emitted); err != nil {
+		return "unknown"
+	}
+	claimed, ok := emitted["bundleId"].(string)
+	if !ok || claimed == "" {
+		return "unknown"
+	}
+	delete(emitted, "bundleId")
+	canonical, err := json.Marshal(emitted)
+	if err != nil {
+		return "unknown"
+	}
+	sum := sha256.Sum256(canonical)
+	if hex.EncodeToString(sum[:]) != claimed {
+		return "failed"
+	}
+	return "passed"
 }
 
 func status(run evidence.Run) string {
