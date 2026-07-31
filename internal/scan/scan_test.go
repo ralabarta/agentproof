@@ -2,6 +2,7 @@ package scan
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/ralabarta/agentproof/internal/evidence"
@@ -70,4 +71,36 @@ func hasFinding(findings []evidence.Finding, id string) bool {
 
 func regexpForTestSecret() *regexp.Regexp {
 	return regexp.MustCompile(`123456789-secret`)
+}
+
+func TestRedactPatchRemovesEntirePrivateKeyBody(t *testing.T) {
+	patch := "+++ b/key.pem\n@@ -0,0 +1,4 @@\n" +
+		"+-----BEGIN RSA PRIVATE KEY-----\n" +
+		"+MIIEowIBAAKCAQEAsecretkeymaterialthatmustnotsurvive\n" +
+		"+ZZZZmoresecretkeymaterialZZZZ\n" +
+		"+-----END RSA PRIVATE KEY-----\n"
+	redacted, count := RedactPatch(patch)
+	if count == 0 {
+		t.Fatal("expected at least one redaction")
+	}
+	if strings.Contains(redacted, "secretkeymaterial") {
+		t.Fatalf("private key body survived redaction:\n%s", redacted)
+	}
+}
+
+func TestScanPatchSurvivesVeryLongAddedLine(t *testing.T) {
+	long := strings.Repeat("x", 200*1024)
+	patch := "+++ b/bundle.js\n@@ -0,0 +1,2 @@\n" +
+		"+" + long + "\n" +
+		"+password = \"" + strings.Repeat("s", 20) + "\"\n"
+	findings := Run(nil, patch)
+	found := false
+	for _, f := range findings {
+		if f.ID == "AP-SECRET-004" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a long line must not stop scanning; findings=%#v", findings)
+	}
 }

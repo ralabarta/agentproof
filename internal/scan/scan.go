@@ -18,9 +18,22 @@ type secretRule struct {
 var secretRules = []secretRule{
 	{"AP-SECRET-001", "Potential AWS access key", regexp.MustCompile(`AKIA[0-9A-Z]{16}`)},
 	{"AP-SECRET-002", "Potential GitHub token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{30,}`)},
-	{"AP-SECRET-003", "Potential private key", regexp.MustCompile(`-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----`)},
-	{"AP-SECRET-004", "Potential hard-coded credential", regexp.MustCompile(`(?i)(api[_-]?key|password|passwd|secret)\s*[:=]\s*["'][^"']{8,}["']`)},
+	{"AP-SECRET-003", "Potential private key", regexp.MustCompile(`-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY( BLOCK)?-----`)},
+	{"AP-SECRET-004", "Potential hard-coded credential", regexp.MustCompile(`(?i)(api[_-]?key|password|passwd|secret|token)\s*[:=]\s*["']?[^\s"']{8,}["']?`)},
+	{"AP-SECRET-005", "Potential Slack token", regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)},
+	{"AP-SECRET-006", "Potential Google API key", regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`)},
+	{"AP-SECRET-007", "Potential Stripe secret key", regexp.MustCompile(`sk_(live|test)_[0-9A-Za-z]{16,}`)},
+	{"AP-SECRET-008", "Potential GitHub fine-grained token", regexp.MustCompile(`github_pat_[0-9A-Za-z_]{20,}`)},
+	{"AP-SECRET-009", "Potential JSON Web Token", regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)},
 }
+
+// A header only marks where key material starts; redaction must consume the
+// base64 body through the matching footer or the key survives in the patch.
+var privateKeyBlock = regexp.MustCompile(`(?s)-----BEGIN [^-\n]*PRIVATE KEY( BLOCK)?-----.*?-----END [^-\n]*PRIVATE KEY( BLOCK)?-----`)
+
+// Bound per-line scanning so a minified bundle cannot exhaust memory, while
+// still being far above any realistic source line.
+const maxPatchLine = 4 * 1024 * 1024
 
 var dangerousShell = regexp.MustCompile(`(?i)^\s*(sudo\s+)?chmod\s+(-R\s+)?777\b`)
 var destructiveSQL = regexp.MustCompile(`(?i)DROP\s+TABLE`)
@@ -75,6 +88,10 @@ func Run(changes []evidence.Change, patch string) []evidence.Finding {
 func RedactPatch(patch string) (string, int) {
 	redacted := patch
 	count := 0
+	redacted = privateKeyBlock.ReplaceAllStringFunc(redacted, func(string) string {
+		count++
+		return "[REDACTED:AP-SECRET-003]"
+	})
 	for _, rule := range secretRules {
 		redacted = rule.pattern.ReplaceAllStringFunc(redacted, func(string) string {
 			count++
@@ -85,7 +102,7 @@ func RedactPatch(patch string) (string, int) {
 }
 
 func RedactString(value string) string {
-	redacted := value
+	redacted := privateKeyBlock.ReplaceAllString(value, "[REDACTED:AP-SECRET-003]")
 	for _, rule := range secretRules {
 		redacted = rule.pattern.ReplaceAllString(redacted, "[REDACTED:"+rule.id+"]")
 	}
@@ -95,6 +112,7 @@ func RedactString(value string) string {
 func scanPatch(patch string) []evidence.Finding {
 	var findings []evidence.Finding
 	scanner := bufio.NewScanner(strings.NewReader(patch))
+	scanner.Buffer(make([]byte, 64*1024), maxPatchLine)
 	path := ""
 	newLine := 0
 	hunk := regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)`)
@@ -142,6 +160,14 @@ func scanPatch(patch string) []evidence.Finding {
 		} else if !strings.HasPrefix(line, "-") {
 			newLine++
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		// A truncated scan must be visible evidence, never a silent clean result.
+		findings = append(findings, evidence.Finding{
+			ID: "AP-SCAN-001", Severity: "high", Title: "Patch scan was incomplete", Path: path,
+			Source: "deterministic-scan-limit", RuleVersion: "v1", Result: "unknown",
+			Description: "The patch contains a line beyond the scanner limit, so later lines were not inspected. Treat secret and danger results as incomplete.",
+		})
 	}
 	return findings
 }
