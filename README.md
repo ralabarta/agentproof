@@ -125,6 +125,8 @@ Outputs are written under `.agentproof/`:
 | `report.md` | Pull-request and terminal-friendly report |
 | `report.html` | Offline self-contained report with restrictive CSP |
 
+AgentProof verifies its own pull requests with the Action below. [`docs/example-report.md`](docs/example-report.md) is real generated output from this repository, not a mock-up.
+
 Exit codes:
 
 | Code | Meaning |
