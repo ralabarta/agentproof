@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: "1.22.x"
+          cache: false
+      - name: Verify source
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Build reproducible release archives
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist stage
+          source_date_epoch=$(git log -1 --pretty=%ct)
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os=${target%/*}
+            arch=${target#*/}
+            suffix=""
+            if [ "$os" = "windows" ]; then suffix=".exe"; fi
+            package="agentproof_${RELEASE_VERSION}_${os}_${arch}"
+            package_dir="stage/$package"
+            mkdir -p "$package_dir"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-s -w -buildid= -X main.version=$RELEASE_VERSION" \
+              -o "$package_dir/agentproof$suffix" ./cmd/agentproof
+            cp README.md LICENSE "$package_dir/"
+            find "$package_dir" -exec touch -d "@$source_date_epoch" {} +
+            if [ "$os" = "windows" ]; then
+              (cd stage && zip -X -q -r "../dist/$package.zip" "$package")
+            else
+              tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owner \
+                -czf "dist/$package.tar.gz" -C stage "$package"
+            fi
+          done
+          (cd dist && sha256sum ./* | sort -k2 > checksums.txt)
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

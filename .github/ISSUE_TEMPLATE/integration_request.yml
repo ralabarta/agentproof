@@ -1,0 +1,33 @@
+name: Integration request
+description: Propose a session adapter, impact analyzer, report format, or platform package
+title: "integration: "
+labels: [integration, help wanted]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Integration type
+      options: [Session adapter, Impact analyzer, Test-result format, Report format, Installer or package, Other]
+    validations:
+      required: true
+  - type: input
+    id: project
+    attributes:
+      label: Tool or ecosystem
+      placeholder: Gemini CLI, Python, SARIF, Homebrew
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence format and public documentation
+      description: Link public format documentation and describe how the adapter can fail closed.
+    validations:
+      required: true
+  - type: textarea
+    id: fixtures
+    attributes:
+      label: Sanitized fixtures and test plan
+      description: Explain how deterministic, secret-free fixtures can cover supported and malformed inputs.
+    validations:
+      required: true

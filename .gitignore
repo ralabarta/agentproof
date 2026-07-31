@@ -1,0 +1,14 @@
+/bin/
+/dist/
+/.agentproof/runs/
+/.agentproof/inputs/
+/.agentproof/latest.json
+/.agentproof/manifest.json
+/.agentproof/evidence.json
+/.agentproof/attestation.json
+/.agentproof/report.md
+/.agentproof/report.html
+
+# Local agent tooling state (machine-specific paths)
+/.atl/
+/.engram/

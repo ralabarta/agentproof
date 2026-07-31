@@ -1,0 +1,41 @@
+name: Bug report
+description: Report incorrect evidence, a crash, or unsafe behavior
+title: "bug: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Do not paste prompts, patches, reports, or logs until you have checked them for secrets and personal data.
+  - type: input
+    id: version
+    attributes:
+      label: AgentProof version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command
+      options: [init, record, verify, purge, GitHub Action]
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized reproduction
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets, credentials, private prompts, and personal data.
+          required: true

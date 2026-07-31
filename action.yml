@@ -1,0 +1,98 @@
+name: AgentProof verification
+description: Verify supplied coding-agent evidence without executing pull-request repository code
+branding:
+  icon: shield
+  color: green
+inputs:
+  base:
+    description: Git baseline, such as origin/main
+    required: true
+  test-results:
+    description: Newline-separated repository-relative JUnit XML or Go test2json artifacts
+    required: false
+  require-tests:
+    description: Fail when no valid test-result artifact is supplied
+    required: false
+    default: "false"
+  fail-on:
+    description: critical, high, medium, low, or none
+    required: false
+    default: critical
+outputs:
+  conclusion:
+    description: passed, warning, or failed
+    value: ${{ steps.verify.outputs.conclusion }}
+  bundle-id:
+    description: SHA-256 identity of the canonical evidence manifest
+    value: ${{ steps.verify.outputs.bundle-id }}
+  completeness:
+    description: Required evidence completeness percentage
+    value: ${{ steps.verify.outputs.completeness }}
+  integrity:
+    description: Canonical manifest integrity result
+    value: ${{ steps.verify.outputs.integrity }}
+  critical-violations:
+    description: Number of critical deterministic findings
+    value: ${{ steps.verify.outputs.critical-violations }}
+  warnings:
+    description: Number of non-critical deterministic findings
+    value: ${{ steps.verify.outputs.warnings }}
+  report:
+    description: Repository-relative Markdown report path
+    value: .agentproof/report.md
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      with:
+        go-version: "1.22.x"
+        cache: false
+    - name: Build pinned AgentProof source
+      shell: bash
+      run: cd "$GITHUB_ACTION_PATH" && go build -trimpath -o "$RUNNER_TEMP/agentproof" ./cmd/agentproof
+    - name: Initialize local evidence directory
+      shell: bash
+      run: test -f .agentproof/config.json || "$RUNNER_TEMP/agentproof" init
+    - name: Verify supplied evidence
+      id: verify
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_TEST_RESULTS: ${{ inputs.test-results }}
+        INPUT_REQUIRE_TESTS: ${{ inputs.require-tests }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        args=(verify --base "$INPUT_BASE" --fail-on "$INPUT_FAIL_ON")
+        if [ "$INPUT_REQUIRE_TESTS" = "true" ]; then args+=(--require-tests); fi
+        while IFS= read -r result; do
+          if [ -n "$result" ]; then args+=(--test-result "$result"); fi
+        done <<< "$INPUT_TEST_RESULTS"
+        set +e
+        "$RUNNER_TEMP/agentproof" "${args[@]}"
+        verify_code=$?
+        set -e
+        if [ -f .agentproof/evidence.json ]; then
+          echo "conclusion=$(jq -r '.status' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+          echo "bundle-id=$(jq -r '.bundle_id' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+          echo "completeness=$(jq -r '.completeness.percent' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+          echo "integrity=$(jq -r '.integrity' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+          echo "critical-violations=$(jq '[.findings[] | select(.severity == "critical")] | length' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+          echo "warnings=$(jq -r '.warning_count' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+        else
+          echo "conclusion=failed" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$verify_code"
+    - name: Upload AgentProof reports
+      if: always() && hashFiles('.agentproof/report.md') != ''
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: agentproof-report
+        path: |
+          .agentproof/manifest.json
+          .agentproof/evidence.json
+          .agentproof/attestation.json
+          .agentproof/report.md
+          .agentproof/report.html
+        include-hidden-files: true
+        if-no-files-found: error

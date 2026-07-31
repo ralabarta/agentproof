@@ -1,0 +1,4 @@
+{"Time":"2026-07-31T00:00:00Z","Action":"run","Package":"github.com/ralabarta/agentproof/internal/example","Test":"TestExample"}
+{"Time":"2026-07-31T00:00:00Z","Action":"pass","Package":"github.com/ralabarta/agentproof/internal/example","Test":"TestExample","Elapsed":0.01}
+{"Time":"2026-07-31T00:00:00Z","Action":"pass","Package":"github.com/ralabarta/agentproof/internal/example","Elapsed":0.01}
+

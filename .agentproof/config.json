@@ -1,0 +1,8 @@
+{
+  "schema_version": "agentproof.config/v1",
+  "default_agent": "auto",
+  "test_results": [],
+  "require_tests": false,
+  "fail_on": "critical",
+  "local_only": true
+}
