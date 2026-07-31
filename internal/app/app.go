@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/gitx"
 	"github.com/ralabarta/agentproof/internal/purge"
@@ -59,7 +60,7 @@ func purgeCommand(args []string) (int, error) {
 	cwd, _ := os.Getwd()
 	root, err := gitx.Root(cwd)
 	if err != nil {
-		return 3, err
+		return classify(err), err
 	}
 	result := purge.Raw(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
 	fmt.Fprintf(os.Stdout, "Raw evidence selected: %d; deleted: %d; failed: %d\n", result.Selected, result.Deleted, result.Failed)
@@ -82,10 +83,10 @@ func initCommand(args []string) (int, error) {
 	cwd, _ := os.Getwd()
 	root, err := gitx.Root(cwd)
 	if err != nil {
-		return 1, err
+		return classify(err), err
 	}
 	if err := config.Init(root, *force); err != nil {
-		return 1, err
+		return classify(err), err
 	}
 	fmt.Fprintln(os.Stdout, "AgentProof initialized in", root)
 	return 0, nil
@@ -107,8 +108,11 @@ func recordCommand(args []string) (int, error) {
 		fmt.Fprintf(os.Stdout, "\nRecorded run %s (%d files changed)\n", run.RunID, len(run.Repository.Changes))
 	}
 	if err != nil {
-		if run.ExitCode > 0 {
-			return run.ExitCode, err
+		// The recorded agent's own exit code is evidence, not AgentProof's
+		// verdict: forwarding it would let a child's 2 be read as invalid
+		// AgentProof usage and a child's 3 as an internal failure.
+		if apperr.IsUsage(err) {
+			return 2, err
 		}
 		return 1, err
 	}
@@ -132,11 +136,21 @@ func verifyCommand(args []string) (int, error) {
 	cwd, _ := os.Getwd()
 	result, err := verify.Run(cwd, verify.Options{Base: *base, TestResults: testResults, RequireTests: *requireTests, FailOn: *failOn})
 	if err != nil {
-		return 3, err
+		return classify(err), err
 	}
 	fmt.Fprintf(os.Stdout, "AgentProof verification: %s\n", strings.ToUpper(result.Run.Status))
 	fmt.Fprintf(os.Stdout, "Report: .agentproof/report.md\nBundle ID: %s\n", result.BundleID)
 	return result.ExitCode, nil
+}
+
+// Exit codes are a public contract CI systems branch on, so the boundary
+// classifies once: a fixable invocation is never reported as an AgentProof
+// internal failure.
+func classify(err error) int {
+	if apperr.IsUsage(err) {
+		return 2
+	}
+	return 3
 }
 
 type stringList []string
@@ -171,7 +185,28 @@ Usage:
 
 Commands:
   init      Create a local-first AgentProof configuration
+              --force                 replace an existing configuration
   record    Record an agent command and its Git change window
+              --objective <text>      objective given to the coding agent
+              --agent <name>          session adapter: codex or claude
+              --model <id>            model identifier when known
+              --retain-raw            retain raw command output locally
   verify    Ingest evidence and generate deterministic integrity reports
-  purge     Preview or delete opted-in raw command logs`)
+              --base <ref>            Git baseline when no session was recorded
+              --test-result <path>    JUnit XML or Go test2json artifact; repeatable
+              --require-tests         fail when no valid test evidence is supplied
+              --fail-on <severity>    critical, high, medium, low, or none
+  purge     Preview or delete opted-in raw command logs
+              --raw                   select opted-in raw command logs
+              --older-than <dur>      minimum age, for example 168h
+              --confirm               delete; otherwise preview only
+
+Exit codes:
+  0  verification passed, or passed with warnings only
+  1  required evidence was missing, or a policy threshold was met
+  2  invalid usage or invalid local configuration
+  3  an adapter, analyzer, or internal step failed
+
+A recorded agent's own exit code is evidence inside the report; it never
+becomes AgentProof's exit code.`)
 }

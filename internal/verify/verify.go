@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/evidence"
 	"github.com/ralabarta/agentproof/internal/gitx"
@@ -42,7 +43,7 @@ func Run(cwd string, opts Options) (Result, error) {
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
-		return Result{}, errors.New("AgentProof is not initialized; run agentproof init")
+		return Result{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
 	}
 	if opts.FailOn == "" {
 		opts.FailOn = cfg.FailOn
@@ -139,7 +140,7 @@ func loadRun(root, base string) (evidence.Run, string, error) {
 	}
 	latestBytes, err := os.ReadFile(filepath.Join(root, config.DirName, "latest.json"))
 	if err != nil {
-		return evidence.Run{}, "", errors.New("no recorded session found; run agentproof record or pass --base")
+		return evidence.Run{}, "", fmt.Errorf("%w: no recorded session found; run agentproof record or pass --base", apperr.ErrUsage)
 	}
 	var latest map[string]string
 	if json.Unmarshal(latestBytes, &latest) != nil || latest["record"] == "" {

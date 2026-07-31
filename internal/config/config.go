@@ -2,10 +2,11 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/safefile"
 )
 
@@ -38,7 +39,7 @@ func Init(root string, force bool) error {
 	}
 	path := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(path); err == nil && !force {
-		return errors.New("already initialized; use --force to replace the configuration")
+		return fmt.Errorf("%w: already initialized; use --force to replace the configuration", apperr.ErrUsage)
 	}
 	b, err := json.MarshalIndent(Default(), "", "  ")
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/evidence"
 	"github.com/ralabarta/agentproof/internal/gitx"
@@ -29,14 +30,14 @@ type Options struct {
 
 func Run(cwd string, opts Options) (evidence.Run, error) {
 	if len(opts.Command) == 0 {
-		return evidence.Run{}, errors.New("record requires a command after --")
+		return evidence.Run{}, fmt.Errorf("%w: record requires a command after --", apperr.ErrUsage)
 	}
 	root, err := gitx.Root(cwd)
 	if err != nil {
 		return evidence.Run{}, err
 	}
 	if _, err := config.Load(root); err != nil {
-		return evidence.Run{}, errors.New("AgentProof is not initialized; run agentproof init")
+		return evidence.Run{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
 	}
 	start, err := gitx.TakeSnapshot(root)
 	if err != nil {

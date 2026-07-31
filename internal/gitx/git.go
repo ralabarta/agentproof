@@ -3,6 +3,7 @@ package gitx
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/evidence"
 )
 
@@ -23,7 +25,7 @@ type Snapshot struct {
 func Root(dir string) (string, error) {
 	out, err := run(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", errors.New("not inside a Git repository")
+		return "", fmt.Errorf("%w: not inside a Git repository", apperr.ErrUsage)
 	}
 	return filepath.Clean(strings.TrimSpace(out)), nil
 }
