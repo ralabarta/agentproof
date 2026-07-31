@@ -170,8 +170,34 @@ func safe(value string) string {
 	return value
 }
 
+// Every character CommonMark can activate inline. Report values originate in
+// the repository and agent under observation, so unescaped prose would let
+// them forge links, raw HTML, and emphasis inside a reviewer-facing document.
+const mdActive = "\\`*_[]()#<>&|"
+
 func mdText(value string) string {
-	value = strings.Map(func(r rune) rune {
+	value = sanitize(value)
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range value {
+		if strings.ContainsRune(mdActive, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// Code spans deliberately skip mdActive: backslashes are literal inside
+// backticks, so escaping there would corrupt every path and hash the report
+// shows. Only the span delimiter and the table cell delimiter need handling.
+func mdCode(value string) string {
+	value = strings.ReplaceAll(sanitize(value), "`", "'")
+	return strings.TrimSpace(strings.ReplaceAll(value, "|", "\\|"))
+}
+
+func sanitize(value string) string {
+	return strings.Map(func(r rune) rune {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			return ' '
@@ -183,10 +209,4 @@ func mdText(value string) string {
 			return r
 		}
 	}, value)
-	value = strings.ReplaceAll(value, "|", "\\|")
-	return strings.TrimSpace(value)
-}
-
-func mdCode(value string) string {
-	return strings.ReplaceAll(mdText(value), "`", "'")
 }
