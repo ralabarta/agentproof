@@ -23,6 +23,53 @@ const (
 	NotObserved State = "not_observed"
 )
 
+// States returns every state a manifest record can carry. AgentProof publishes
+// these vocabularies as part of its trust model, so they are enumerable rather
+// than scattered as literals: a documented value no producer emits is a false
+// claim, and a value no document explains is an unexplained one.
+func States() []State {
+	return []State{Observed, Missing, Unsupported, Unknown, NotObserved}
+}
+
+// ClaimConfidence grades how a human-facing claim was reached. It is a separate
+// axis from State: State says whether a source was captured, ClaimConfidence
+// says how far the conclusion sits from the captured bytes.
+type ClaimConfidence string
+
+const (
+	// ConfidenceObserved marks a claim read straight from captured evidence.
+	ConfidenceObserved ClaimConfidence = "observed"
+	// ConfidenceDerived marks a claim computed deterministically from it.
+	ConfidenceDerived ClaimConfidence = "derived"
+	// ConfidenceInferred marks a claim weakened by conditions AgentProof could
+	// observe but not control, such as a worktree dirty before recording.
+	ConfidenceInferred ClaimConfidence = "inferred"
+)
+
+func ClaimConfidences() []ClaimConfidence {
+	return []ClaimConfidence{ConfidenceObserved, ConfidenceDerived, ConfidenceInferred}
+}
+
+// Association grades how firmly observed changes bind to the recorded window.
+// It is a third axis, and deliberately never says "authored by": AgentProof
+// observes a Git range around a command, which is correlation, not causality.
+type Association string
+
+const (
+	// AssociationClean means the baseline was clean and the range is exact.
+	AssociationClean Association = "clean-baseline"
+	// AssociationContaminated means uncommitted work predated the recording,
+	// so the range cannot separate it from what the agent changed.
+	AssociationContaminated Association = "contaminated-baseline"
+	// AssociationUncaptured means changed content could not be captured at all,
+	// so the range is known to be incomplete.
+	AssociationUncaptured Association = "unknown-uncaptured-worktree"
+)
+
+func Associations() []Association {
+	return []Association{AssociationClean, AssociationContaminated, AssociationUncaptured}
+}
+
 type Confidence struct {
 	Score   uint8    `json:"score"`
 	Reasons []string `json:"reasons"`

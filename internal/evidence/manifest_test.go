@@ -1,6 +1,8 @@
 package evidence
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -87,6 +89,39 @@ func TestCanonicalBytesNormalizesPathsAndReasons(t *testing.T) {
 	}
 	if !strings.Contains(string(got), `"locator":"logs/result.json"`) || !strings.Contains(string(got), `"reasons":["a","z"]`) {
 		t.Fatalf("normalization missing: %s", got)
+	}
+}
+
+// The README's evidence-state table is the trust model users read before they
+// trust a bundle. It drifted from the code once already — documenting a state
+// that never existed and omitting three that did — so the vocabularies are
+// enumerable here and the document is checked against them, not against prose.
+func TestREADMEDocumentsEveryEvidenceVocabulary(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(readme)
+	var documented []string
+	for _, state := range States() {
+		documented = append(documented, string(state))
+	}
+	for _, confidence := range ClaimConfidences() {
+		documented = append(documented, string(confidence))
+	}
+	for _, association := range Associations() {
+		documented = append(documented, string(association))
+	}
+	for _, value := range documented {
+		if !strings.Contains(text, "`"+value+"`") {
+			t.Errorf("README does not document the %q vocabulary value", value)
+		}
+	}
+	// "associated" was documented as an evidence state for releases in which no
+	// such state was ever emitted. A vocabulary the code cannot produce is a
+	// false claim about the trust model.
+	if strings.Contains(text, "`associated`") {
+		t.Error("README documents `associated`, which no vocabulary emits")
 	}
 }
 

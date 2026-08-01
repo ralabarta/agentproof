@@ -46,7 +46,7 @@ func Markdown(run evidence.Run, hash string) []byte {
 		fmt.Fprintf(&b, "- ✗ Uncaptured changed content: %s\n", mdText(strings.Join(run.Repository.UncapturedPaths, ", ")))
 	}
 	b.WriteString("\n## Provenance\n\n")
-	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n| Agent | `%s` |\n| Model | `%s` |\n| Duration | `%s` |\n| Start commit | `%s` |\n| End commit | `%s` |\n| Association | `%s` |\n", mdCode(safe(run.Agent)), mdCode(safe(run.Model)), duration(run.DurationMS), mdCode(short(run.Repository.StartHead)), mdCode(short(run.Repository.EndHead)), mdCode(run.Repository.AssociationStatus))
+	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n| Agent | `%s` |\n| Model | `%s` |\n| Duration | `%s` |\n| Start commit | `%s` |\n| End commit | `%s` |\n| Association | `%s` |\n", mdCode(safe(run.Agent)), mdCode(safe(run.Model)), duration(run.DurationMS), mdCode(short(run.Repository.StartHead)), mdCode(short(run.Repository.EndHead)), mdCode(string(run.Repository.AssociationStatus)))
 	b.WriteString("\n## Changes\n\n| File | Status | Added | Deleted |\n|---|---:|---:|---:|\n")
 	if len(run.Repository.Changes) == 0 {
 		b.WriteString("| _No changes detected_ | | 0 | 0 |\n")

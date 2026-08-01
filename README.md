@@ -56,17 +56,35 @@ Coding-agent evidence is normally scattered across terminal sessions, Git, CI lo
 | 🎯 | **Deterministic checks** | Stable finding IDs, ordered output, bounded parsers, canonical manifests |
 | 🍴 | **Fork-aware CI** | Verification ingests artifacts; it never runs tests, hooks, builds, or repo commands |
 
-### Evidence states
+### Evidence vocabularies
 
-Every human-facing claim is classified. This is the core of the trust model:
+Every human-facing claim is classified on three independent axes. This is the core of the trust model, and it is enforced: the vocabularies are enumerated in `internal/evidence` and a test fails if this section drifts from them.
+
+**Evidence state** — was the source captured?
 
 | State | Meaning |
 |---|---|
 | `observed` | Captured directly from Git, a process result, or a supplied artifact |
-| `derived` | Calculated deterministically from observed bytes |
-| `associated` | Linked by Git state, content, or time — no causality or authorship claimed |
+| `missing` | Required and declared, but not present where it was declared |
 | `unsupported` | Not handled by the current version |
 | `unknown` | Attempted but indeterminate, with a stated reason |
+| `not_observed` | Never declared or discovered, so nothing was expected |
+
+**Claim confidence** — how far is the conclusion from the captured bytes?
+
+| Confidence | Meaning |
+|---|---|
+| `observed` | Read straight from captured evidence |
+| `derived` | Computed deterministically from it |
+| `inferred` | Weakened by conditions AgentProof observed but could not control |
+
+**Association** — how firmly do the changes bind to the recorded window? Never a claim of authorship.
+
+| Association | Meaning |
+|---|---|
+| `clean-baseline` | The baseline was clean, so the Git range is exact |
+| `contaminated-baseline` | Uncommitted work predated recording and cannot be separated out |
+| `unknown-uncaptured-worktree` | Changed content could not be captured, so the range is incomplete |
 
 ## Install
 

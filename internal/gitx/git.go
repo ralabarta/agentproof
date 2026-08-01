@@ -52,12 +52,12 @@ func Collect(root string, start, end Snapshot) (evidence.Repository, string, err
 		return evidence.Repository{}, "", err
 	}
 	patch, _ := patch(root, start.Head, end.Head)
-	association := "clean-baseline"
+	association := evidence.AssociationClean
 	if strings.TrimSpace(start.Status) != "" {
-		association = "contaminated-baseline"
+		association = evidence.AssociationContaminated
 	}
 	if len(uncaptured) > 0 {
-		association = "unknown-uncaptured-worktree"
+		association = evidence.AssociationUncaptured
 	}
 	return evidence.Repository{
 		Root:              ".",

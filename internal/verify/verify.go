@@ -82,8 +82,8 @@ func Run(cwd string, opts Options) (Result, error) {
 	run.Status = status(run)
 	run.WarningCount = warningCount(run)
 	run.Claims = append(run.Claims,
-		evidence.Claim{Type: "security-scan", Statement: "Added lines were checked with deterministic secret and danger rules.", Confidence: "derived", Evidence: "redacted changes.patch"},
-		evidence.Claim{Type: "impact-analysis", Statement: "Affected components are bounded syntactic observations, not runtime reachability.", Confidence: "derived", Evidence: "repository source graph"},
+		evidence.Claim{Type: "security-scan", Statement: "Added lines were checked with deterministic secret and danger rules.", Confidence: evidence.ConfidenceDerived, Evidence: "redacted changes.patch"},
+		evidence.Claim{Type: "impact-analysis", Statement: "Affected components are bounded syntactic observations, not runtime reachability.", Confidence: evidence.ConfidenceDerived, Evidence: "repository source graph"},
 	)
 
 	outputDir := filepath.Join(root, config.DirName)
@@ -135,7 +135,7 @@ func loadRun(root, base string) (evidence.Run, string, error) {
 			SchemaVersion: evidence.RunSchemaVersion, RunID: "git-" + now.Format("20060102T150405Z"),
 			Objective: "Verify changes associated with Git baseline " + base, Agent: "unknown",
 			StartedAt: now, FinishedAt: now, Repository: repo,
-			Claims: []evidence.Claim{{Type: "git-association", Statement: "Changes are associated with a Git range; agent authorship is unknown.", Confidence: "observed", Evidence: base + "...HEAD"}},
+			Claims: []evidence.Claim{{Type: "git-association", Statement: "Changes are associated with a Git range; agent authorship is unknown.", Confidence: evidence.ConfidenceObserved, Evidence: base + "...HEAD"}},
 		}, patch, nil
 	}
 	latestBytes, err := os.ReadFile(filepath.Join(root, config.DirName, "latest.json"))
@@ -328,11 +328,14 @@ func linkageScore(dirty bool) uint8 {
 	return 100
 }
 
+// Reasons explain a confidence score; they are not association values. The
+// clean case once spelled "clean-baseline" here too, which read as if the
+// Association vocabulary had leaked into a different axis.
 func linkageReasons(dirty bool) []string {
 	if dirty {
 		return []string{"dirty-worktree", "window-association-only"}
 	}
-	return []string{"clean-baseline", "git-range-match"}
+	return []string{"clean-worktree", "git-range-match"}
 }
 
 func stateScore(state evidence.State) uint8 {

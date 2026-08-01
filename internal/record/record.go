@@ -144,11 +144,11 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	return result, nil
 }
 
-func confidence(dirty bool) string {
+func confidence(dirty bool) evidence.ClaimConfidence {
 	if dirty {
-		return "inferred"
+		return evidence.ConfidenceInferred
 	}
-	return "derived"
+	return evidence.ConfidenceDerived
 }
 
 func save(path string, value any) error {

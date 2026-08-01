@@ -38,17 +38,17 @@ type Completeness struct {
 }
 
 type Repository struct {
-	Root              string   `json:"root"`
-	StartHead         string   `json:"start_head"`
-	EndHead           string   `json:"end_head"`
-	DirtyBefore       bool     `json:"dirty_before"`
-	DirtyAfter        bool     `json:"dirty_after"`
-	AssociationStatus string   `json:"association_status"`
-	Changes           []Change `json:"changes"`
-	CommittedChanges  []Change `json:"committed_changes"`
-	WorkingChanges    []Change `json:"working_tree_changes"`
-	UncapturedPaths   []string `json:"uncaptured_paths,omitempty"`
-	Commits           []Commit `json:"commits"`
+	Root              string      `json:"root"`
+	StartHead         string      `json:"start_head"`
+	EndHead           string      `json:"end_head"`
+	DirtyBefore       bool        `json:"dirty_before"`
+	DirtyAfter        bool        `json:"dirty_after"`
+	AssociationStatus Association `json:"association_status"`
+	Changes           []Change    `json:"changes"`
+	CommittedChanges  []Change    `json:"committed_changes"`
+	WorkingChanges    []Change    `json:"working_tree_changes"`
+	UncapturedPaths   []string    `json:"uncaptured_paths,omitempty"`
+	Commits           []Commit    `json:"commits"`
 }
 
 type Change struct {
@@ -142,10 +142,10 @@ type Edge struct {
 }
 
 type Claim struct {
-	Type       string `json:"type"`
-	Statement  string `json:"statement"`
-	Confidence string `json:"confidence"`
-	Evidence   string `json:"evidence"`
+	Type       string          `json:"type"`
+	Statement  string          `json:"statement"`
+	Confidence ClaimConfidence `json:"confidence"`
+	Evidence   string          `json:"evidence"`
 }
 
 type Attestation struct {
