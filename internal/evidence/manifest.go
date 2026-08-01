@@ -178,12 +178,33 @@ func (m Manifest) normalizedRecords() ([]Record, error) {
 		}
 		record.Confidence.Reasons = normalizeStrings(record.Confidence.Reasons)
 	}
-	sort.Slice(records, func(i, j int) bool {
-		left, _ := json.Marshal(records[i])
-		right, _ := json.Marshal(records[j])
-		return bytes.Compare(left, right) < 0
-	})
+	// Order by a key marshalled once per record. Comparing by marshalling
+	// inside the comparator re-serializes every record O(n log n) times, and a
+	// manifest can carry one record per uncaptured path.
+	keys := make([][]byte, len(records))
+	for i, record := range records {
+		key, err := json.Marshal(record)
+		if err != nil {
+			return nil, fmt.Errorf("record %d: %w", i, err)
+		}
+		keys[i] = key
+	}
+	sort.Sort(&recordsByKey{records: records, keys: keys})
 	return records, nil
+}
+
+// recordsByKey keeps each record beside its precomputed ordering key so a swap
+// moves both, which sort.Slice cannot express.
+type recordsByKey struct {
+	records []Record
+	keys    [][]byte
+}
+
+func (r *recordsByKey) Len() int           { return len(r.records) }
+func (r *recordsByKey) Less(i, j int) bool { return bytes.Compare(r.keys[i], r.keys[j]) < 0 }
+func (r *recordsByKey) Swap(i, j int) {
+	r.records[i], r.records[j] = r.records[j], r.records[i]
+	r.keys[i], r.keys[j] = r.keys[j], r.keys[i]
 }
 
 func validateRecord(record Record, index int) error {

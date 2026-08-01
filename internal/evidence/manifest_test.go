@@ -1,6 +1,8 @@
 package evidence
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +166,64 @@ func readDoc(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// Two records are too few to exercise a sort: the bundle identity is a hash of
+// the ordered census, so ordering must hold at a size where the sort actually
+// swaps, and must not depend on the order records were discovered in.
+func TestCanonicalOrderIsIndependentOfInputOrderAtScale(t *testing.T) {
+	const count = 64
+	const hexAlphabet = "0123456789abcdef"
+	records := make([]Record, count)
+	for i := range records {
+		records[i] = Record{
+			Locator: fmt.Sprintf("logs/%02d.json", i), State: Observed, Required: true,
+			Digest: digest(string(hexAlphabet[i%16])), Confidence: Confidence{Score: 100},
+		}
+	}
+	reversed := make([]Record, count)
+	for i, record := range records {
+		reversed[count-1-i] = record
+	}
+
+	forward, err := NewManifest(records).CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backward, err := NewManifest(reversed).CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forward) != string(backward) {
+		t.Fatal("canonical bytes depend on the order records were discovered in")
+	}
+
+	var decoded struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := json.Unmarshal(forward, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Records) != count {
+		t.Fatalf("expected %d records, got %d", count, len(decoded.Records))
+	}
+	// Every emitted record must still carry its own digest. A sort that moves a
+	// record without its ordering key silently rewrites the census it hashes.
+	for _, record := range decoded.Records {
+		locator, _ := record["locator"].(string)
+		var index int
+		if _, err := fmt.Sscanf(locator, "logs/%d.json", &index); err != nil {
+			t.Fatalf("unexpected locator %q", locator)
+		}
+		if want := digest(string(hexAlphabet[index%16])); record["digest"] != want {
+			t.Fatalf("%s carries digest %v, want %v", locator, record["digest"], want)
+		}
+	}
+	for i := 1; i < len(decoded.Records); i++ {
+		if decoded.Records[i-1]["locator"].(string) >= decoded.Records[i]["locator"].(string) {
+			t.Fatalf("records are not ordered at index %d: %v", i, decoded.Records)
+		}
+	}
 }
 
 func digest(seed string) string {
