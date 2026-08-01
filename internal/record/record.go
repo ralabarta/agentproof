@@ -55,15 +55,24 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	var logFile *os.File
+	var logWriter io.WriteCloser
 	if opts.RetainRaw {
 		logFile, err = os.OpenFile(filepath.Join(runDir, "command.log"), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 		if err != nil {
 			return evidence.Run{}, err
 		}
-		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
-		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
+		// The recorded process is not under AgentProof's control, so the same
+		// secret rules that redact changes.patch apply to what it prints. Only
+		// the retained file is wrapped: the operator's terminal keeps the raw
+		// bytes it would have seen without AgentProof.
+		logWriter = scan.NewRedactingWriter(logFile)
+		cmd.Stdout = io.MultiWriter(os.Stdout, logWriter)
+		cmd.Stderr = io.MultiWriter(os.Stderr, logWriter)
 	}
 	runErr := cmd.Run()
+	if logWriter != nil {
+		_ = logWriter.Close()
+	}
 	if logFile != nil {
 		_ = logFile.Close()
 	}

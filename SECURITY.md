@@ -16,5 +16,5 @@ Maintainers should acknowledge a report within seven days. No bounty or response
 
 AgentProof treats session logs, repository paths, test artifacts, patches, and pull-request content as untrusted input. Its hashes detect changes after capture; they do not prove source authenticity, authorship, completeness, correctness, or merge safety.
 
-Raw command output is disabled by default. If explicitly retained, it remains local, is excluded from Git and reports, and can be previewed and purged with `agentproof purge --raw`.
+Raw command output is disabled by default. If explicitly retained, it is redacted with the same secret rules applied to patches as it is written, remains local, is excluded from Git and reports, and can be previewed and purged with `agentproof purge --raw`. Redaction is line-oriented, so a secret printed inside a single line longer than 64 KiB may survive; treat retained output as sensitive regardless.
 
