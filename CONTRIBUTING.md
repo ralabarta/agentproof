@@ -2,6 +2,8 @@
 
 AgentProof welcomes focused fixes, provider fixtures, deterministic risk rules, parsers, and platform support.
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities and conduct concerns through the private channel in [SECURITY.md](SECURITY.md), never in a public issue.
+
 ## Development
 
 Requirements: Go 1.22+, Git, and GNU Make.
@@ -22,7 +24,8 @@ Keep changes reviewable and add tests for malformed, oversized, truncated, adver
 
 ## Evidence language
 
-- Say that evidence is **observed**, **derived**, **associated**, **unknown**, or **unsupported**.
+- Use the published vocabularies, which are three separate axes and never interchangeable. Evidence state is `observed`, `missing`, `unsupported`, `unknown`, or `not_observed`. Claim confidence is `observed`, `derived`, or `inferred`. Git association is `clean-baseline`, `contaminated-baseline`, or `unknown-uncaptured-worktree`.
+- Adding a value means adding it to `States()`, `ClaimConfidences()`, or `Associations()` in `internal/evidence`, and documenting it in the README. Tests check the documents against those functions, so an undocumented value fails the build.
 - Do not claim authorship from timing, commits, file changes, or session proximity.
 - Do not describe a passing report as proof that code is safe.
 - Missing or indeterminate required evidence must fail closed.

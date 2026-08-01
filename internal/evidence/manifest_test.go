@@ -118,32 +118,52 @@ func TestCanonicalBytesNormalizesPathsAndReasons(t *testing.T) {
 // that never existed and omitting three that did — so the vocabularies are
 // enumerable here and the document is checked against them, not against prose.
 func TestREADMEDocumentsEveryEvidenceVocabulary(t *testing.T) {
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(readme)
-	var documented []string
-	for _, state := range States() {
-		documented = append(documented, string(state))
-	}
-	for _, confidence := range ClaimConfidences() {
-		documented = append(documented, string(confidence))
-	}
-	for _, association := range Associations() {
-		documented = append(documented, string(association))
-	}
-	for _, value := range documented {
+	text := readDoc(t, "README.md")
+	for _, value := range publishedVocabulary() {
 		if !strings.Contains(text, "`"+value+"`") {
 			t.Errorf("README does not document the %q vocabulary value", value)
 		}
 	}
+	assertNoPhantomState(t, "README.md", text)
+}
+
+// CONTRIBUTING.md tells contributors which words a claim may use, so a word it
+// blesses that no vocabulary emits teaches the drift instead of preventing it.
+func TestContributingTeachesOnlyEmittedVocabulary(t *testing.T) {
+	assertNoPhantomState(t, "CONTRIBUTING.md", readDoc(t, "CONTRIBUTING.md"))
+}
+
+func assertNoPhantomState(t *testing.T, name, text string) {
+	t.Helper()
 	// "associated" was documented as an evidence state for releases in which no
 	// such state was ever emitted. A vocabulary the code cannot produce is a
 	// false claim about the trust model.
-	if strings.Contains(text, "`associated`") {
-		t.Error("README documents `associated`, which no vocabulary emits")
+	if strings.Contains(text, "**associated**") || strings.Contains(text, "`associated`") {
+		t.Errorf("%s documents `associated`, which no vocabulary emits", name)
 	}
+}
+
+func publishedVocabulary() []string {
+	var values []string
+	for _, state := range States() {
+		values = append(values, string(state))
+	}
+	for _, confidence := range ClaimConfidences() {
+		values = append(values, string(confidence))
+	}
+	for _, association := range Associations() {
+		values = append(values, string(association))
+	}
+	return values
+}
+
+func readDoc(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func digest(seed string) string {
