@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+// A manifest is the census a bundle identity is computed over, so a record
+// carrying a state outside the published vocabulary must never be serialized:
+// it would describe evidence in terms no reader can interpret.
+func TestManifestRejectsStatesOutsideTheVocabulary(t *testing.T) {
+	for _, state := range States() {
+		record := Record{Locator: "logs/a.json", State: state, Reason: "stated"}
+		if state == Observed {
+			record.Reason = ""
+			record.Digest = digest("a")
+		}
+		manifest := NewManifest([]Record{record})
+		if _, err := manifest.CanonicalBytes(); err != nil {
+			t.Errorf("published state %q was rejected: %v", state, err)
+		}
+	}
+	manifest := NewManifest([]Record{{Locator: "logs/a.json", State: State("totally-made-up"), Reason: "stated"}})
+	if _, err := manifest.CanonicalBytes(); err == nil {
+		t.Fatal("a state outside the vocabulary was accepted")
+	}
+}
+
 func TestCanonicalIdentityIsDeterministic(t *testing.T) {
 	records := []Record{
 		{Locator: "logs/z.json", State: Unknown, Required: true, Reason: "parser-drift", Confidence: Confidence{Score: 20, Reasons: []string{"version-mismatch", "format-unknown"}}},

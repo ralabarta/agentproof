@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -186,9 +187,10 @@ func (m Manifest) normalizedRecords() ([]Record, error) {
 }
 
 func validateRecord(record Record, index int) error {
-	switch record.State {
-	case Observed, Missing, Unsupported, Unknown, NotObserved:
-	default:
+	// Consume the published vocabulary rather than restating it: a state added
+	// to States() but forgotten here would be emitted and then rejected by the
+	// manifest that is supposed to describe it.
+	if !slices.Contains(States(), record.State) {
 		return fmt.Errorf("record %d: unsupported state %q", index, record.State)
 	}
 	if record.Confidence.Score > 100 {
