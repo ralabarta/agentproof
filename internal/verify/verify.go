@@ -181,6 +181,9 @@ func containedPath(dir, declared string) (string, error) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", errors.New("recorded run path escapes the evidence directory")
 	}
+	if err := safefile.Contained(dirAbs, full); err != nil {
+		return "", errors.New("recorded run path escapes the evidence directory")
+	}
 	return full, nil
 }
 

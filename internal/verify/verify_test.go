@@ -37,6 +37,37 @@ func TestLoadRunRejectsRecordPathOutsideAgentProofDir(t *testing.T) {
 	}
 }
 
+// The lexical check above only inspects the string. A directory symlink keeps
+// every component inside .agentproof while the bytes come from elsewhere.
+func TestLoadRunRejectsRecordPathBehindDirectorySymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "record.json"), []byte(`{"schema_version":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "changes.patch"), []byte("--- a/x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, ".agentproof")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "latest.json"), []byte(`{"record":"link/record.json"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadRun(root, ""); err == nil {
+		t.Fatal("a record locator resolving outside .agentproof must be rejected")
+	} else if !strings.Contains(err.Error(), "escapes") {
+		t.Fatalf("expected a containment error, got %v", err)
+	}
+}
+
 func TestStatus(t *testing.T) {
 	if got := status(runWithTests(true)); got != "passed" {
 		t.Fatalf("expected passed, got %s", got)

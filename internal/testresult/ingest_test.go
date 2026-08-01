@@ -41,6 +41,32 @@ func TestIngestRejectsTraversalAndMissing(t *testing.T) {
 	}
 }
 
+// Rejecting a symlinked final component is not containment: an intermediate
+// directory symlink puts the whole subtree outside the repository while every
+// lexical check still reports a path inside it.
+func TestIngestRejectsIntermediateDirectorySymlink(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "repo")
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(outside, "junit.xml"), `<testsuite><testcase name="ok"/></testsuite>`)
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	result, records := Ingest(root, []string{"link/junit.xml"}, true)
+	if records[0].State == evidence.Observed {
+		t.Fatalf("content outside the repository was ingested: %#v", records[0])
+	}
+	if result.PassedTests != 0 {
+		t.Fatalf("tests outside the repository were counted: %#v", result)
+	}
+}
+
 func TestNoDeclaredResultsRemainOptionalByDefault(t *testing.T) {
 	result, records := Ingest(t.TempDir(), nil, false)
 	if result.Ingested || records[0].State != evidence.NotObserved || records[0].Required {

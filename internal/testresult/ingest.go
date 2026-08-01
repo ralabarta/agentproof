@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/ralabarta/agentproof/internal/evidence"
+	"github.com/ralabarta/agentproof/internal/safefile"
 )
 
 const (
@@ -252,6 +253,9 @@ func securePath(root, declared string) (string, string, error) {
 	}
 	rel, err := filepath.Rel(rootAbs, full)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", errors.New("test result path escapes repository root")
+	}
+	if err := safefile.Contained(rootAbs, full); err != nil {
 		return "", "", errors.New("test result path escapes repository root")
 	}
 	return full, rel, nil
