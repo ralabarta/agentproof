@@ -117,6 +117,13 @@ func Run(cwd string, opts Options) (Result, error) {
 	if err := safefile.Write(filepath.Join(outputDir, "report.html"), html, 0o600); err != nil {
 		return Result{}, err
 	}
+	sarif, err := report.SARIF(run)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := safefile.Write(filepath.Join(outputDir, "report.sarif"), sarif, 0o600); err != nil {
+		return Result{}, err
+	}
 	exitCode := 0
 	if run.Status == "failed" || scan.MeetsThreshold(run.Findings, opts.FailOn) {
 		exitCode = 1

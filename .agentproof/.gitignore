@@ -5,3 +5,4 @@ evidence.json
 attestation.json
 report.md
 report.html
+*.sarif

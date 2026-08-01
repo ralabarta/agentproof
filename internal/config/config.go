@@ -49,7 +49,7 @@ func Init(root string, force bool) error {
 	if err := safefile.Write(path, b, 0o600); err != nil {
 		return err
 	}
-	ignore := "inputs/\nruns/\nlatest.json\nmanifest.json\nevidence.json\nattestation.json\nreport.md\nreport.html\n"
+	ignore := "inputs/\nruns/\nlatest.json\nmanifest.json\nevidence.json\nattestation.json\nreport.md\nreport.html\nreport.sarif\n"
 	return safefile.Write(filepath.Join(dir, ".gitignore"), []byte(ignore), 0o600)
 }
 
