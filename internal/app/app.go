@@ -14,6 +14,7 @@ import (
 	"github.com/ralabarta/agentproof/internal/gitx"
 	"github.com/ralabarta/agentproof/internal/purge"
 	"github.com/ralabarta/agentproof/internal/record"
+	"github.com/ralabarta/agentproof/internal/status"
 	"github.com/ralabarta/agentproof/internal/verify"
 )
 
@@ -37,10 +38,34 @@ func Run(args []string, version string) (int, error) {
 		return verifyCommand(args[1:])
 	case "purge":
 		return purgeCommand(args[1:])
+	case "status":
+		return statusCommand(args[1:])
 	default:
 		return 2, fmt.Errorf("unknown command %q", args[0])
 	}
 }
+
+func statusCommand(_ []string) (int, error) {
+	cwd, _ := os.Getwd()
+	s, err := status.Read(cwd)
+	if err != nil {
+		return 3, err
+	}
+	if !s.Initialized {
+		fmt.Fprintln(os.Stdout, "Not initialized — run `agentproof init` first")
+		return 0, nil
+	}
+	fmt.Fprintf(os.Stdout, "Initialized:   true\n")
+	fmt.Fprintf(os.Stdout, "Runs:          %d\n", s.RunCount)
+	fmt.Fprintf(os.Stdout, "Abandoned:     %d\n", s.AbandonedRuns)
+	if s.LastStatus != "" {
+		fmt.Fprintf(os.Stdout, "Last status:   %s\n", s.LastStatus)
+		fmt.Fprintf(os.Stdout, "Last bundle:   %s\n", s.LastBundleID)
+		fmt.Fprintf(os.Stdout, "Last verified: %s\n", s.LastVerifiedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+	}
+	return 0, nil
+}
+
 
 func purgeCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("purge", flag.ContinueOnError)
