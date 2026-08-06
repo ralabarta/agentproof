@@ -65,3 +65,50 @@ func Read(root string) (State, error) {
 
 	return s, nil
 }
+
+// RunSummary holds the key fields for a single recorded run.
+type RunSummary struct {
+	ID        string
+	Objective string
+	Agent     string
+	StartedAt time.Time
+	State     string // "recorded", "complete", "abandoned", or "recording"
+}
+
+// ListRuns returns a summary of every run directory under root. A missing runs
+// directory is not an error — it simply returns nil.
+func ListRuns(root string) ([]RunSummary, error) {
+	runsDir := filepath.Join(root, config.DirName, "runs")
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var result []RunSummary
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		rs := RunSummary{ID: e.Name()}
+		// record.go writes record.json with objective, agent, startedAt, status.
+		recordFile := filepath.Join(runsDir, e.Name(), "record.json")
+		if data, err := os.ReadFile(recordFile); err == nil {
+			var rec struct {
+				Objective string    `json:"objective"`
+				Agent     string    `json:"agent"`
+				StartedAt time.Time `json:"startedAt"`
+				Status    string    `json:"status"`
+			}
+			if json.Unmarshal(data, &rec) == nil {
+				rs.Objective = rec.Objective
+				rs.Agent = rec.Agent
+				rs.StartedAt = rec.StartedAt
+				rs.State = rec.Status
+			}
+		}
+		result = append(result, rs)
+	}
+	return result, nil
+}

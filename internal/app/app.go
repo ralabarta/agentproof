@@ -38,6 +38,8 @@ func Run(args []string, version string) (int, error) {
 		return verifyCommand(args[1:])
 	case "purge":
 		return purgeCommand(args[1:])
+	case "runs":
+		return runsCommand(args[1:])
 	case "status":
 		return statusCommand(args[1:])
 	default:
@@ -234,4 +236,24 @@ Exit codes:
 
 A recorded agent's own exit code is evidence inside the report; it never
 becomes AgentProof's exit code.`)
+}
+
+func runsCommand(_ []string) (int, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 3, err
+	}
+	runs, err := status.ListRuns(cwd)
+	if err != nil {
+		return 3, err
+	}
+	if len(runs) == 0 {
+		fmt.Fprintln(os.Stdout, "No runs recorded.")
+		return 0, nil
+	}
+	fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", "ID", "STATE", "AGENT", "OBJECTIVE")
+	for _, r := range runs {
+		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, r.Objective)
+	}
+	return 0, nil
 }
