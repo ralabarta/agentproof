@@ -12,6 +12,7 @@ import (
 	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/gitx"
+	"github.com/ralabarta/agentproof/internal/doctor"
 	"github.com/ralabarta/agentproof/internal/purge"
 	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
@@ -42,6 +43,8 @@ func Run(args []string, version string) (int, error) {
 		return runsCommand(args[1:])
 	case "status":
 		return statusCommand(args[1:])
+	case "doctor":
+		return doctorCommand(args[1:])
 	default:
 		return 2, fmt.Errorf("unknown command %q", args[0])
 	}
@@ -254,6 +257,34 @@ func runsCommand(_ []string) (int, error) {
 	fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", "ID", "STATE", "AGENT", "OBJECTIVE")
 	for _, r := range runs {
 		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, r.Objective)
+	}
+	return 0, nil
+}
+
+func doctorCommand(_ []string) (int, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 3, err
+	}
+	report, err := doctor.Run(cwd)
+	if err != nil {
+		return 3, err
+	}
+	for _, f := range report.Findings {
+		icon := "✓"
+		if f.Severity == doctor.SeverityWarn {
+			icon = "⚠"
+		} else if f.Severity == doctor.SeverityError {
+			icon = "✗"
+		}
+		if f.Detail != "" {
+			fmt.Fprintf(os.Stdout, "%s  %-24s  %s\n", icon, f.Name, f.Detail)
+		} else {
+			fmt.Fprintf(os.Stdout, "%s  %s\n", icon, f.Name)
+		}
+	}
+	if !report.Healthy {
+		return 1, nil
 	}
 	return 0, nil
 }
