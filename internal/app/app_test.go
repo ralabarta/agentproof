@@ -17,6 +17,7 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 		{"init"},
 		{"verify"},
 		{"purge", "--raw"},
+		{"purge", "--runs"},
 	} {
 		if code, err := Run(args, "test"); code != 2 {
 			t.Errorf("%v outside a Git repository is invalid usage: got %d (%v)", args, code, err)
@@ -75,6 +76,15 @@ func TestRecordWithoutCommandIsUsage(t *testing.T) {
 	chdir(t, gitRepo(t))
 	if code, err := Run([]string{"record", "--objective", "x"}, "test"); code != 2 {
 		t.Fatalf("record without a command after -- is invalid usage: got %d (%v)", code, err)
+	}
+}
+
+// Purge requires a selector: without --raw or --runs there is nothing to
+// preview or delete, and the invocation is invalid usage.
+func TestPurgeRequiresASelector(t *testing.T) {
+	chdir(t, gitRepo(t))
+	if code, err := Run([]string{"purge"}, "test"); code != 2 {
+		t.Fatalf("purge without a selector is invalid usage: got %d (%v)", code, err)
 	}
 }
 

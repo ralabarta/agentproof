@@ -87,13 +87,14 @@ func purgeCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("purge", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	raw := fs.Bool("raw", false, "select opted-in raw command logs")
+	runDirs := fs.Bool("runs", false, "select abandoned or stuck run directories")
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "minimum age, for example 168h")
 	confirm := fs.Bool("confirm", false, "delete selected files; otherwise preview only")
 	if err := fs.Parse(args); err != nil {
 		return 2, err
 	}
-	if !*raw {
-		return 2, errors.New("purge currently requires --raw")
+	if !*raw && !*runDirs {
+		return 2, errors.New("purge requires --raw or --runs")
 	}
 	if *olderThan < 0 {
 		return 2, errors.New("--older-than cannot be negative")
@@ -103,13 +104,25 @@ func purgeCommand(args []string) (int, error) {
 	if err != nil {
 		return classify(err), err
 	}
-	result := purge.Raw(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
-	fmt.Fprintf(os.Stdout, "Raw evidence selected: %d; deleted: %d; failed: %d\n", result.Selected, result.Deleted, result.Failed)
+	result := purge.Result{}
+	if *raw {
+		r := purge.Raw(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+		result.Selected += r.Selected
+		result.Deleted += r.Deleted
+		result.Failed += r.Failed
+	}
+	if *runDirs {
+		r := purge.Runs(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+		result.Selected += r.Selected
+		result.Deleted += r.Deleted
+		result.Failed += r.Failed
+	}
+	fmt.Fprintf(os.Stdout, "Selected: %d; deleted: %d; failed: %d\n", result.Selected, result.Deleted, result.Failed)
 	if !*confirm {
-		fmt.Fprintln(os.Stdout, "Preview only. Re-run with --confirm to delete the selected raw files.")
+		fmt.Fprintln(os.Stdout, "Preview only. Re-run with --confirm to delete the selected files.")
 	}
 	if result.Failed > 0 {
-		return 3, errors.New("one or more raw evidence files could not be processed")
+		return 3, errors.New("one or more evidence files could not be processed")
 	}
 	return 0, nil
 }
@@ -238,8 +251,9 @@ Commands:
               --test-result <path>    JUnit XML or Go test2json artifact; repeatable
               --require-tests         fail when no valid test evidence is supplied
               --fail-on <severity>    critical, high, medium, low, or none
-  purge     Preview or delete opted-in raw command logs
+  purge     Preview or delete raw logs and dead runs
               --raw                   select opted-in raw command logs
+              --runs                  select abandoned or stuck run directories
               --older-than <dur>      minimum age, for example 168h
               --confirm               delete; otherwise preview only
   completion Generate a shell completion script

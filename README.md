@@ -147,6 +147,18 @@ agentproof purge --raw --confirm  # delete the previewed selection
 
 </details>
 
+<details>
+<summary><b>Run retention (abandoned and stuck runs)</b></summary>
+
+```bash
+agentproof purge --runs           # preview abandoned or stuck run directories
+agentproof purge --runs --confirm # delete the previewed run directories
+```
+
+Retention is state-based: only runs that can never produce evidence are selected — abandoned by a signal, or stuck in the recording state after a crash that bypassed signal handling. Runs in progress, completed runs, and the evidence they carry are never touched.
+
+</details>
+
 ## Supply test evidence
 
 AgentProof deliberately does not run repository code during verification. Generate results in your existing test job, then supply one or more artifacts:
