@@ -7,8 +7,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ralabarta/agentproof/internal/apperr"
@@ -39,6 +43,11 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	if _, err := config.Load(root); err != nil {
 		return evidence.Run{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
 	}
+	release, err := acquireLock(root)
+	if err != nil {
+		return evidence.Run{}, err
+	}
+	defer release()
 	start, err := gitx.TakeSnapshot(root)
 	if err != nil {
 		return evidence.Run{}, err
@@ -47,6 +56,32 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	runID := started.Format("20060102T150405.000000000Z")
 	runDir := filepath.Join(root, config.DirName, "runs", runID)
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		return evidence.Run{}, err
+	}
+	statePath := filepath.Join(runDir, "state.json")
+
+	// The lifecycle state file is how status and doctor detect interrupted
+	// runs. The handler must be armed before the recording state is written so
+	// a poller that observes "recording" can rely on an interrupt being caught;
+	// the buffered channel lets the runtime queue the signal even before the
+	// goroutine is scheduled.
+	var interrupted atomic.Bool
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	go func() {
+		received := <-signals
+		interrupted.Store(true)
+		_ = writeRunState(statePath, runState{Status: "abandoned", StartedAt: started, Signal: signalName(received)})
+		// Re-raise with the default disposition so a shell observes the
+		// conventional 128+signal status; on platforms without signal
+		// re-delivery, exit explicitly instead of lingering.
+		if raiseSignal(received) {
+			return
+		}
+		os.Exit(1)
+	}()
+	if err := writeRunState(statePath, runState{Status: "recording", StartedAt: started}); err != nil {
 		return evidence.Run{}, err
 	}
 	cmd := exec.Command(opts.Command[0], opts.Command[1:]...)
@@ -86,6 +121,15 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 		}
 	}
 	finished := time.Now().UTC()
+	// The command ran to completion (even if it failed), so the run is not
+	// abandoned. The interrupted flag is set by the signal handler before it
+	// writes the abandoned state, which keeps the final state correct even when
+	// a signal races with this write.
+	if !interrupted.Load() {
+		if err := writeRunState(statePath, runState{Status: "complete", StartedAt: started, CompletedAt: &finished}); err != nil {
+			return evidence.Run{}, err
+		}
+	}
 	end, err := gitx.TakeSnapshot(root)
 	if err != nil {
 		return evidence.Run{}, err
@@ -151,6 +195,79 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 		return result, fmt.Errorf("recorded command exited with code %d", exitCode)
 	}
 	return result, nil
+}
+
+// runState is the per-run lifecycle marker written by record and read by
+// status and doctor to detect abandoned runs. Keys are camelCase to match the
+// published contract; only the status key is consumed today, but the rest is
+// kept stable so the file stays self-describing. CompletedAt is a pointer
+// because time.Time never counts as empty for omitempty, which would leak a
+// zero timestamp into the recording state.
+type runState struct {
+	Status      string     `json:"status"`
+	StartedAt   time.Time  `json:"startedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	Signal      string     `json:"signal,omitempty"`
+}
+
+func writeRunState(path string, state runState) error {
+	b, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return safefile.Write(path, append(b, '\n'), 0o600)
+}
+
+func signalName(s os.Signal) string {
+	switch s {
+	case os.Interrupt:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	default:
+		if sig, ok := s.(syscall.Signal); ok {
+			return strconv.Itoa(int(sig))
+		}
+		return s.String()
+	}
+}
+
+// acquireLock takes the advisory .record.lock so two records cannot write
+// overlapping windows into the same repository. A lock whose PID is no longer
+// alive is stale and taken over; anything else fails closed so a live record
+// is never silently doubled.
+func acquireLock(root string) (func(), error) {
+	lockPath := filepath.Join(root, config.DirName, ".record.lock")
+	data, err := os.ReadFile(lockPath)
+	if err == nil {
+		if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil && pid > 0 && processAlive(pid) {
+			return nil, fmt.Errorf("%w: another agentproof record is already running (pid %d)", apperr.ErrUsage, pid)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		return nil, err
+	}
+	return func() { _ = os.Remove(lockPath) }, nil
+}
+
+// processAlive reports whether a PID is running. Checking is conservative:
+// only a definitive "no such process" proves the PID is gone — ESRCH from
+// kill(2) on Unix, or ErrProcessDone when FindProcess already resolved the
+// PID against the running set (Linux). Anything else, including platforms
+// that cannot answer signal 0, keeps the lock blocking rather than risking a
+// parallel record.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+	return !errors.Is(err, syscall.ESRCH) && !errors.Is(err, os.ErrProcessDone)
 }
 
 func confidence(dirty bool) evidence.ClaimConfidence {
