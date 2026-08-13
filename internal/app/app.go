@@ -66,6 +66,14 @@ func statusCommand(_ []string) (int, error) {
 	fmt.Fprintf(os.Stdout, "Initialized:   true\n")
 	fmt.Fprintf(os.Stdout, "Runs:          %d\n", s.RunCount)
 	fmt.Fprintf(os.Stdout, "Abandoned:     %d\n", s.AbandonedRuns)
+	// Runs left in the recording state by a hard crash (SIGKILL, power loss) are
+	// stuck; a run whose lock PID is still alive is a record in progress, so it
+	// must not be counted here, mirroring the doctor check.
+	stuck := s.RecordingRuns
+	if record.LiveRecord(cwd) && stuck > 0 {
+		stuck--
+	}
+	fmt.Fprintf(os.Stdout, "Stuck:         %d\n", stuck)
 	if s.LastStatus != "" {
 		fmt.Fprintf(os.Stdout, "Last status:   %s\n", s.LastStatus)
 		fmt.Fprintf(os.Stdout, "Last bundle:   %s\n", s.LastBundleID)
