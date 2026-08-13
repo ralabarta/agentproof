@@ -78,6 +78,25 @@ func TestRecordWithoutCommandIsUsage(t *testing.T) {
 	}
 }
 
+func TestCompletionCommand(t *testing.T) {
+	// Completions do not depend on a Git repository, so a plain temp dir is fine.
+	chdir(t, t.TempDir())
+	if code, err := Run([]string{"completion"}, "test"); code != 0 {
+		t.Fatalf("completion with default shell should succeed: got %d (%v)", code, err)
+	}
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		if code, err := Run([]string{"completion", shell}, "test"); code != 0 {
+			t.Fatalf("completion %s should succeed: got %d (%v)", shell, code, err)
+		}
+	}
+	if code, err := Run([]string{"completion", "powershell"}, "test"); code != 2 {
+		t.Fatalf("an unsupported shell is invalid usage: got %d (%v)", code, err)
+	}
+	if code, err := Run([]string{"completion", "bash", "zsh"}, "test"); code != 2 {
+		t.Fatalf("more than one shell is invalid usage: got %d (%v)", code, err)
+	}
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 	previous, err := os.Getwd()

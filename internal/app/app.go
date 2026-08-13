@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ralabarta/agentproof/internal/apperr"
+	"github.com/ralabarta/agentproof/internal/completion"
 	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/gitx"
 	"github.com/ralabarta/agentproof/internal/doctor"
@@ -45,6 +46,8 @@ func Run(args []string, version string) (int, error) {
 		return statusCommand(args[1:])
 	case "doctor":
 		return doctorCommand(args[1:])
+	case "completion":
+		return completionCommand(args[1:])
 	default:
 		return 2, fmt.Errorf("unknown command %q", args[0])
 	}
@@ -212,6 +215,7 @@ Usage:
   agentproof verify --test-result test-results.jsonl [--require-tests]
   agentproof verify --base origin/main
   agentproof purge --raw --older-than 168h [--confirm]
+  agentproof completion bash
 
 Commands:
   init      Create a local-first AgentProof configuration
@@ -230,6 +234,8 @@ Commands:
               --raw                   select opted-in raw command logs
               --older-than <dur>      minimum age, for example 168h
               --confirm               delete; otherwise preview only
+  completion Generate a shell completion script
+              bash, zsh, or fish (default bash)
 
 Exit codes:
   0  verification passed, or passed with warnings only
@@ -257,6 +263,20 @@ func runsCommand(_ []string) (int, error) {
 	fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", "ID", "STATE", "AGENT", "OBJECTIVE")
 	for _, r := range runs {
 		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, r.Objective)
+	}
+	return 0, nil
+}
+
+func completionCommand(args []string) (int, error) {
+	if len(args) > 1 {
+		return 2, errors.New("completion accepts at most one shell: bash, zsh, or fish")
+	}
+	shell := "bash"
+	if len(args) == 1 {
+		shell = args[0]
+	}
+	if err := completion.Generate(shell, os.Stdout); err != nil {
+		return 2, err
 	}
 	return 0, nil
 }
