@@ -18,3 +18,5 @@ AgentProof treats session logs, repository paths, test artifacts, patches, and p
 
 Raw command output is disabled by default. If explicitly retained, it is redacted with the same secret rules applied to patches as it is written, remains local, is excluded from Git and reports, and can be previewed and purged with `agentproof purge --raw`. Redaction is line-oriented, so a secret printed inside a single line longer than 64 KiB may survive; treat retained output as sensitive regardless.
 
+Run directories track a lifecycle: `recording` while the agent command runs, `complete` when it finishes, or `abandoned` with the recorded signal when interrupted. Abandoned runs and runs stuck in the recording state after a hard crash can be previewed and removed with `agentproof purge --runs`. A PID-based advisory lock rejects parallel records, preventing overlapping Git windows that would contaminate association evidence.
+

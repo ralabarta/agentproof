@@ -27,19 +27,22 @@ Hashes detect modification after capture. They do not prove authenticity, author
 | `internal/scan` | Versioned deterministic secret and high-risk rules |
 | `internal/report` | Escaped Markdown and offline CSP-constrained HTML |
 | `internal/safefile` | Symlink-resistant atomic local publication |
-| `internal/purge` | Preview-first raw evidence lifecycle |
+| `internal/purge` | Preview-first retention for raw logs and dead run directories |
+| `internal/status` | Read local state: initialization, run counts, abandoned/stuck runs, last verification |
+| `internal/doctor` | Surface actionable diagnostics from the local state |
+| `internal/completion` | Render bash, zsh, and fish completion scripts from the CLI command table |
 
 ## Data flows
 
 ### Record
 
-1. Resolve the Git repository and capture HEAD plus working-tree state.
-2. Run the explicitly supplied agent command.
+1. Resolve the Git repository, capture HEAD plus working-tree state, and acquire an advisory lock that rejects parallel records.
+2. Write the per-run lifecycle state (`recording`) and run the explicitly supplied agent command; SIGINT and SIGTERM mark the run `abandoned` with the signal recorded.
 3. Capture final Git state and separate committed from working-tree changes.
 4. Scan the in-memory patch for deterministic findings.
 5. Redact secret-like values before persisting the patch.
 6. Discover bounded native session artifacts modified in the command window.
-7. Write normalized run evidence atomically with mode `0600`.
+7. Write normalized run evidence atomically with mode `0600` and mark the run `complete`.
 
 Raw command output is retained only with `--retain-raw`.
 

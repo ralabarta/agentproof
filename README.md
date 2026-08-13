@@ -108,6 +108,22 @@ The runtime depends only on the Go standard library — there is nothing else to
 
 </details>
 
+<details>
+<summary><b>Shell completions</b></summary>
+
+```bash
+# bash
+source <(agentproof completion bash)
+# zsh
+source <(agentproof completion zsh)
+# fish
+agentproof completion fish | source
+```
+
+Scripts are generated from the same command and option table the CLI help uses.
+
+</details>
+
 ## Record an agent session
 
 Initialize inside an existing Git repository and commit the generated configuration before the first recording:
@@ -159,6 +175,24 @@ Retention is state-based: only runs that can never produce evidence are selected
 
 </details>
 
+## Inspect local state
+
+```bash
+agentproof status   # initialization, run counts, abandoned/stuck runs, last verification
+agentproof runs     # list recorded runs
+agentproof doctor   # diagnostics with actionable findings
+```
+
+Each run records a lifecycle in `state.json`:
+
+| State | Meaning |
+|---|---|
+| `recording` | The agent command is running |
+| `complete` | The command finished and the run was saved |
+| `abandoned` | Interrupted by SIGINT/SIGTERM; the signal is recorded |
+
+A run left in `recording` with no live lock is *stuck* — its record process crashed without finishing (SIGKILL, power loss). `status` and `doctor` surface abandoned and stuck runs, and `purge --runs` removes them.
+
 ## Supply test evidence
 
 AgentProof deliberately does not run repository code during verification. Generate results in your existing test job, then supply one or more artifacts:
@@ -193,6 +227,7 @@ Outputs are written under `.agentproof/`:
 | `attestation.json` | Hash of the emitted manifest plus bundle ID |
 | `report.md` | Pull-request and terminal-friendly report |
 | `report.html` | Offline self-contained report with restrictive CSP |
+| `report.sarif` | SARIF 2.1.0 findings for integration with code-scanning tooling |
 
 AgentProof verifies its own pull requests with the Action below. **[`docs/example-report.md`](docs/example-report.md) is real generated output from this repository, not a mock-up.**
 
@@ -227,7 +262,7 @@ steps:
       fail-on: critical
 ```
 
-The Action requests **read-only** repository permissions, emits machine-readable outputs, and uploads the report bundle. It does not comment on pull requests by default — comment publication should be a separate, explicitly trusted workflow that consumes only the generated report.
+The Action requests **read-only** repository permissions, emits machine-readable outputs, and uploads the report bundle. It also writes the verification report to the job step summary, so the result renders directly in the pull-request Checks tab. It does not comment on pull requests by default — comment publication should be a separate, explicitly trusted workflow that consumes only the generated report.
 
 <details>
 <summary><b>Action inputs and outputs</b></summary>
@@ -274,7 +309,7 @@ Traversal is deterministic and bounded:
 
 Built-in rules cover secret-like additions and high-risk paths including authentication, migrations, dependency manifests, environment configuration, APIs, and CI workflows.
 
-**Roadmap:** adapters for the remaining languages, SARIF output, Ed25519/Sigstore signing, test-to-change mapping, and versioned cost tables.
+**Roadmap:** adapters for the remaining languages, Ed25519/Sigstore signing, test-to-change mapping, and versioned cost tables.
 
 ## Privacy and trust model
 

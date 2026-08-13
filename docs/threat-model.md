@@ -17,6 +17,7 @@ AgentProof processes hostile repository content, session metadata, Git paths, pa
 
 - `verify` never executes repository code.
 - Missing or unknown required evidence cannot pass.
+- Parallel records in one repository are rejected, so overlapping Git windows cannot contaminate association evidence.
 - Secret values never appear in deterministic finding descriptions.
 - Raw command output is explicit, local, ignored by Git, previewable, and purgeable.
 - Unsupported analysis is visible rather than represented as zero impact.
