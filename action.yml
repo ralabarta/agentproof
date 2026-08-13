@@ -83,6 +83,14 @@ runs:
           echo "conclusion=failed" >> "$GITHUB_OUTPUT"
         fi
         exit "$verify_code"
+    - name: Write Step Summary
+      shell: bash
+      if: always()
+      run: |
+        if [ -f .agentproof/report.md ]; then
+          printf '## AgentProof\n\n' >> "$GITHUB_STEP_SUMMARY"
+          cat .agentproof/report.md >> "$GITHUB_STEP_SUMMARY"
+        fi
     - name: Upload AgentProof reports
       if: always() && hashFiles('.agentproof/report.md') != ''
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
