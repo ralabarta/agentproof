@@ -4,10 +4,18 @@ All notable changes to AgentProof are documented in this file. The project follo
 
 ## [Unreleased]
 
+### Added
+
+- `agentproof completion` command generating bash, zsh, and fish completion scripts from a single command table.
+- GitHub Action writes the verification report to the job step summary so results render directly in the pull-request Checks tab.
+- Per-run lifecycle `state.json` written by `record` (recording → complete, or abandoned with the signal) and an advisory lock against parallel records.
+- `purge --runs` retention policy selecting abandoned and stuck run directories while completed evidence is never touched.
+- Fuzz targets for secret redaction, the patch scanner, native session normalization, and test-result ingestion.
+
 ### Planned
 
 - Tree-sitter impact adapters for TypeScript, TSX, and Python.
-- SARIF output and identity-backed signing.
+- Identity-backed signing (Ed25519/Sigstore).
 - Versioned native-session fixtures for Codex and Claude Code.
 
 ## [0.1.0] - 2026-07-31

@@ -202,7 +202,7 @@ Implement each check calling existing `gitx.Root`, `config.Load`, `status.ListRu
 - Create: `internal/completion/completion_test.go`
 - Modify: `internal/app/app.go` (add `case "completion":`)
 
-- [ ] **Write failing test:**
+- [x] **Write failing test:**
 
 ```go
 func TestGenerate_Bash(t *testing.T) {
@@ -216,7 +216,7 @@ func TestGenerate_Bash(t *testing.T) {
 }
 ```
 
-- [ ] **Implement** — use `text/template` (stdlib) with embedded completion templates:
+- [x] **Implement** — use `text/template` (stdlib) with embedded completion templates:
 
 ```go
 func Generate(shell string, w io.Writer) error {
@@ -233,7 +233,7 @@ Bash template: `_agentproof() { ... }; complete -F _agentproof agentproof`
 Zsh template: `#compdef agentproof\n...`
 Fish template: `complete -c agentproof ...`
 
-- [ ] **Run tests, commit:** `feat(completion): add bash/zsh/fish shell completions`
+- [x] **Run tests, commit:** `feat(completion): add bash/zsh/fish shell completions`
 
 ---
 
@@ -242,7 +242,7 @@ Fish template: `complete -c agentproof ...`
 **Files:**
 - Modify: `action.yml` only
 
-- [ ] **Edit `action.yml`** — add after the verify step, before upload:
+- [x] **Edit `action.yml`** — add after the verify step, before upload:
 
 ```yaml
     - name: Write Step Summary
@@ -255,8 +255,8 @@ Fish template: `complete -c agentproof ...`
         fi
 ```
 
-- [ ] **Verify** the step is positioned after verify and before artifact upload.
-- [ ] **Commit:** `feat(action): write GitHub Step Summary`
+- [x] **Verify** the step is positioned after verify and before artifact upload.
+- [x] **Commit:** `feat(action): write GitHub Step Summary`
 
 ---
 
@@ -349,7 +349,7 @@ State file written on record start at `<runDir>/state.json`:
 On clean exit: `{"status":"complete","startedAt":"...","completedAt":"..."}`
 On interrupt/signal: `{"status":"abandoned","startedAt":"...","signal":"SIGINT"}`
 
-- [ ] **Write test for state transitions:**
+- [x] **Write test for state transitions:**
 
 ```go
 func TestStateFile_WrittenOnStart(t *testing.T) {
@@ -360,7 +360,7 @@ func TestStateFile_Abandoned_OnKill(t *testing.T) {
 }
 ```
 
-- [ ] **Implement** in `record.go`:
+- [x] **Implement** in `record.go`:
 
 ```go
 type runState struct {
@@ -377,7 +377,7 @@ type runState struct {
 
 Lockfile: create `.agentproof/.record.lock` containing PID at start; check it before starting; remove on exit. If lockfile PID is dead, proceed (stale lock).
 
-- [ ] **Run tests, commit:** `feat(record): add state.json tracking and parallel record guard`
+- [x] **Run tests, commit:** `feat(record): add state.json tracking and parallel record guard`
 
 ---
 
@@ -437,7 +437,7 @@ Add `--coverage <path>` to verify; ingest and include in evidence output.
 - Modify: `internal/purge/purge_test.go`
 - Modify: `internal/app/app.go` (add `--runs` flag to purge command)
 
-- [ ] **Write failing test:**
+- [x] **Write failing test:**
 
 ```go
 func TestPurge_Runs_OlderThan(t *testing.T) {
@@ -448,9 +448,9 @@ func TestPurge_Runs_OlderThan(t *testing.T) {
 }
 ```
 
-- [ ] **Implement** in `purge.go` — add `Runs bool` to `Options`; when set, scan `<root>/.agentproof/runs/` for dirs older than `OlderThan`; preview or delete.
+- [x] **Implement** in `purge.go` — add `Runs bool` to `Options`; when set, scan `<root>/.agentproof/runs/` for dirs older than `OlderThan`; preview or delete.
 
-- [ ] **Run tests, commit:** `feat(purge): add run retention policy with --runs flag`
+- [x] **Run tests, commit:** `feat(purge): add run retention policy with --runs flag`
 
 ---
 
@@ -620,7 +620,7 @@ func TestExtractKotlinImports(t *testing.T) {
 - Create: `internal/session/fuzz_test.go`
 - Create: `internal/testresult/fuzz_test.go`
 
-- [ ] **Create `internal/scan/fuzz_test.go`:**
+- [x] **Create `internal/scan/fuzz_test.go`:**
 
 ```go
 //go:build go1.18
@@ -641,7 +641,7 @@ func FuzzRedact(f *testing.F) {
 }
 ```
 
-- [ ] **Create `internal/session/fuzz_test.go`:**
+- [x] **Create `internal/session/fuzz_test.go`:**
 
 ```go
 func FuzzIngestJSONL(f *testing.F) {
@@ -653,7 +653,7 @@ func FuzzIngestJSONL(f *testing.F) {
 }
 ```
 
-- [ ] **Create `internal/testresult/fuzz_test.go`:**
+- [x] **Create `internal/testresult/fuzz_test.go`:**
 
 ```go
 func FuzzIngestXML(f *testing.F) {
@@ -664,8 +664,8 @@ func FuzzIngestXML(f *testing.F) {
 }
 ```
 
-- [ ] **Verify fuzz tests compile:** `go test -run=^$ ./internal/scan/... ./internal/session/... ./internal/testresult/...`
-- [ ] **Commit:** `test(fuzz): add fuzz tests for untrusted parsers`
+- [x] **Verify fuzz tests compile:** `go test -run=^$ ./internal/scan/... ./internal/session/... ./internal/testresult/...`
+- [x] **Commit:** `test(fuzz): add fuzz tests for untrusted parsers`
 
 ---
 
