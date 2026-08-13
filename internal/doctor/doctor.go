@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
 )
 
@@ -65,9 +66,25 @@ func Run(cwd string) (Report, error) {
 				Detail:   fmt.Sprintf("%d abandoned run(s) — consider running `agentproof purge`", s.AbandonedRuns),
 			})
 		}
+
+		// check 4: runs stuck in the recording state. A crash that bypasses
+		// signal handling (SIGKILL, power loss, a panic) leaves state.json as
+		// "recording" forever, indistinguishable from a live run except that a
+		// live record still owns a live lock.
+		stuck := s.RecordingRuns
+		if record.LiveRecord(cwd) && stuck > 0 {
+			stuck-- // the currently recording run is expected
+		}
+		if stuck > 0 {
+			r.Findings = append(r.Findings, Finding{
+				Name:     "stuck-recording-runs",
+				Severity: SeverityWarn,
+				Detail:   fmt.Sprintf("%d run(s) stuck in the recording state — the record process died without completing; consider purging them", stuck),
+			})
+		}
 	}
 
-	// check 4: go toolchain
+	// check 5: go toolchain
 	if _, err := exec.LookPath("go"); err != nil {
 		r.Findings = append(r.Findings, Finding{
 			Name:     "go-toolchain",

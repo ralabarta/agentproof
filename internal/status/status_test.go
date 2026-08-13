@@ -42,24 +42,29 @@ func TestReadStatus(t *testing.T) {
 		t.Fatalf("expected RunCount=0, got %d", s.RunCount)
 	}
 
-	// 3. Create one abandoned run dir
-	runDir := filepath.Join(apDir, "runs", "run-abc123")
-	if err := os.MkdirAll(runDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	stateData, _ := json.Marshal(map[string]string{"status": "abandoned"})
-	if err := os.WriteFile(filepath.Join(runDir, "state.json"), stateData, 0o600); err != nil {
-		t.Fatal(err)
+	// 3. Create an abandoned run and one stuck in the recording state
+	for _, state := range []string{"abandoned", "recording"} {
+		runDir := filepath.Join(apDir, "runs", "run-"+state)
+		if err := os.MkdirAll(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		stateData, _ := json.Marshal(map[string]string{"status": state})
+		if err := os.WriteFile(filepath.Join(runDir, "state.json"), stateData, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	s, err = status.Read(dir)
 	if err != nil {
-		t.Fatalf("unexpected error with run: %v", err)
+		t.Fatalf("unexpected error with runs: %v", err)
 	}
-	if s.RunCount != 1 {
-		t.Fatalf("expected RunCount=1, got %d", s.RunCount)
+	if s.RunCount != 2 {
+		t.Fatalf("expected RunCount=2, got %d", s.RunCount)
 	}
 	if s.AbandonedRuns != 1 {
 		t.Fatalf("expected AbandonedRuns=1, got %d", s.AbandonedRuns)
+	}
+	if s.RecordingRuns != 1 {
+		t.Fatalf("expected RecordingRuns=1, got %d", s.RecordingRuns)
 	}
 }
 

@@ -11,11 +11,12 @@ import (
 
 // State summarises the AgentProof state for a project root.
 type State struct {
-	Initialized   bool
-	RunCount      int
-	AbandonedRuns int
-	LastBundleID  string
-	LastStatus    string // "passed", "warning", "failed", or ""
+	Initialized    bool
+	RunCount       int
+	AbandonedRuns  int
+	RecordingRuns  int
+	LastBundleID   string
+	LastStatus     string // "passed", "warning", "failed", or ""
 	LastVerifiedAt time.Time
 }
 
@@ -41,11 +42,17 @@ func Read(root string) (State, error) {
 			var rs struct {
 				Status string `json:"status"`
 			}
-			if json.Unmarshal(data, &rs) == nil && rs.Status == "abandoned" {
-				s.AbandonedRuns++
+			if json.Unmarshal(data, &rs) == nil {
+				switch rs.Status {
+				case "abandoned":
+					s.AbandonedRuns++
+				case "recording":
+					s.RecordingRuns++
+				}
 			}
 		}
 	}
+
 
 	// evidence.json is the normalized evidence.Run emitted by verify: status and
 	// bundle_id live at the document root, not under a nested "run" object.

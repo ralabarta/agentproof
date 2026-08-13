@@ -232,6 +232,24 @@ func signalName(s os.Signal) string {
 	}
 }
 
+// LiveRecord reports whether a record is currently running in root, by
+// resolving the advisory lock PID against the running process set. It is how
+// doctor tells a genuinely recording run apart from one stuck after a crash
+// that bypassed signal handling (for example SIGKILL): both leave a
+// "recording" state.json, but only the live one still owns a live lock.
+func LiveRecord(root string) bool {
+	lockPath := filepath.Join(root, config.DirName, ".record.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	return processAlive(pid)
+}
+
 // acquireLock takes the advisory .record.lock so two records cannot write
 // overlapping windows into the same repository. A lock whose PID is no longer
 // alive is stale and taken over; anything else fails closed so a live record

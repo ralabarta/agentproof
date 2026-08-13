@@ -189,6 +189,32 @@ func TestRecordLockIgnoresStaleLock(t *testing.T) {
 	}
 }
 
+// LiveRecord resolves the lock PID against the running process set, which is
+// how doctor separates a live record from a run stuck after a hard crash.
+func TestLiveRecordDistinguishesActiveFromStaleLocks(t *testing.T) {
+	root := newRepo(t)
+	lockPath := filepath.Join(root, config.DirName, ".record.lock")
+	if LiveRecord(root) {
+		t.Fatal("expected no live record without a lock file")
+	}
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !LiveRecord(root) {
+		t.Fatal("expected a live record for the current process pid")
+	}
+	dead := exec.Command("sh", "-c", "exit 0")
+	if err := dead.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(dead.ProcessState.Pid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if LiveRecord(root) {
+		t.Fatal("expected no live record for a stale lock")
+	}
+}
+
 // An interrupt while recording must mark the run abandoned. The recording runs
 // in a re-exec'd child so the signal reaches the real signal handler; the
 // parent first waits for the recording state so the handler is armed.
