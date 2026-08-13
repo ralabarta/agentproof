@@ -47,19 +47,32 @@ func Read(root string) (State, error) {
 		}
 	}
 
+	// evidence.json is the normalized evidence.Run emitted by verify: status and
+	// bundle_id live at the document root, not under a nested "run" object.
 	evPath := filepath.Join(root, config.DirName, "evidence.json")
 	if data, err := os.ReadFile(evPath); err == nil {
 		var ev struct {
-			Run struct {
-				Status   string    `json:"status"`
-				BundleID string    `json:"bundleID"`
-				At       time.Time `json:"at"`
-			} `json:"run"`
+			Status   string `json:"status"`
+			BundleID string `json:"bundle_id"`
 		}
 		if json.Unmarshal(data, &ev) == nil {
-			s.LastStatus = ev.Run.Status
-			s.LastBundleID = ev.Run.BundleID
-			s.LastVerifiedAt = ev.Run.At
+			s.LastStatus = ev.Status
+			s.LastBundleID = ev.BundleID
+		}
+	}
+
+	// LastVerifiedAt is the instant verification produced the current bundle.
+	// evidence.json cannot provide it: its StartedAt/FinishedAt describe the
+	// recorded agent window (and for --base runs they are the verification
+	// instant by construction), so the timestamp comes from attestation.json,
+	// which verify writes atomically in the same publication step.
+	attPath := filepath.Join(root, config.DirName, "attestation.json")
+	if data, err := os.ReadFile(attPath); err == nil {
+		var att struct {
+			CreatedAt time.Time `json:"created_at"`
+		}
+		if json.Unmarshal(data, &att) == nil {
+			s.LastVerifiedAt = att.CreatedAt
 		}
 	}
 

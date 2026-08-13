@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ralabarta/agentproof/internal/evidence"
 	"github.com/ralabarta/agentproof/internal/status"
 )
 
@@ -60,6 +61,118 @@ func TestReadStatus(t *testing.T) {
 	if s.AbandonedRuns != 1 {
 		t.Fatalf("expected AbandonedRuns=1, got %d", s.AbandonedRuns)
 	}
+}
+
+// TestReadPopulatesVerificationFields guards the evidence.json contract: the
+// JSON is built with the same types and marshalling that verify.Run emits, so a
+// schema drift in the evidence or attestation documents fails here instead of
+// silently leaving status fields empty.
+func TestReadPopulatesVerificationFields(t *testing.T) {
+	dir := initializedDir(t)
+	apDir := filepath.Join(dir, ".agentproof")
+
+	verifiedAt := time.Date(2026, 8, 6, 14, 30, 0, 0, time.UTC)
+	evidenceBytes, err := json.MarshalIndent(evidence.Run{
+		SchemaVersion: evidence.RunSchemaVersion,
+		RunID:         "git-20260806T143000Z",
+		Status:        "warning",
+		BundleID:      "7f0c9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e",
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "evidence.json"), append(evidenceBytes, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attestationBytes, err := json.MarshalIndent(evidence.Attestation{
+		SchemaVersion: "agentproof.dev/attestation/v1",
+		Algorithm:     "sha256",
+		BundleID:      "7f0c9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e",
+		CreatedAt:     verifiedAt,
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "attestation.json"), append(attestationBytes, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := status.Read(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !s.Initialized {
+		t.Fatal("expected Initialized=true")
+	}
+	if s.LastStatus != "warning" {
+		t.Fatalf("expected LastStatus %q, got %q", "warning", s.LastStatus)
+	}
+	if s.LastBundleID != "7f0c9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e" {
+		t.Fatalf("expected LastBundleID to be populated, got %q", s.LastBundleID)
+	}
+	if !s.LastVerifiedAt.Equal(verifiedAt) {
+		t.Fatalf("expected LastVerifiedAt %v, got %v", verifiedAt, s.LastVerifiedAt)
+	}
+}
+
+// TestReadWithoutAttestation verifies graceful degradation: evidence.json can
+// exist without its attestation (a crash between the two atomic writes), in
+// which case the bundle identity and status still load and the timestamp stays
+// zero instead of erroring.
+func TestReadWithoutAttestation(t *testing.T) {
+	dir := initializedDir(t)
+	apDir := filepath.Join(dir, ".agentproof")
+	evidenceBytes, err := json.MarshalIndent(evidence.Run{Status: "passed", BundleID: "deadbeef"}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "evidence.json"), append(evidenceBytes, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := status.Read(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.LastStatus != "passed" || s.LastBundleID != "deadbeef" {
+		t.Fatalf("expected status/bundle to load without attestation, got %q / %q", s.LastStatus, s.LastBundleID)
+	}
+	if !s.LastVerifiedAt.IsZero() {
+		t.Fatalf("expected zero LastVerifiedAt without attestation, got %v", s.LastVerifiedAt)
+	}
+}
+
+// TestReadIgnoresMalformedEvidence ensures a corrupt evidence.json degrades to
+// empty fields rather than an error, matching the prior contract of the command.
+func TestReadIgnoresMalformedEvidence(t *testing.T) {
+	dir := initializedDir(t)
+	apDir := filepath.Join(dir, ".agentproof")
+	if err := os.WriteFile(filepath.Join(apDir, "evidence.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := status.Read(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.LastStatus != "" || s.LastBundleID != "" || !s.LastVerifiedAt.IsZero() {
+		t.Fatalf("expected empty verification fields for malformed evidence, got %q / %q / %v", s.LastStatus, s.LastBundleID, s.LastVerifiedAt)
+	}
+}
+
+// initializedDir returns a temp directory with a config.json, mirroring what
+// agentproof init produces.
+func initializedDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	apDir := filepath.Join(dir, ".agentproof")
+	if err := os.MkdirAll(filepath.Join(apDir, "runs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "config.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestListRuns(t *testing.T) {
