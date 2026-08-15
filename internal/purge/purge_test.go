@@ -50,6 +50,12 @@ func TestRawHonorsAge(t *testing.T) {
 func writeRun(t *testing.T, root, name, status string) string {
 	t.Helper()
 	dir := filepath.Join(root, ".agentproof", "runs", name)
+	writeRunDir(t, dir, status)
+	return dir
+}
+
+func writeRunDir(t *testing.T, dir, status string) {
+	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +66,231 @@ func writeRun(t *testing.T, root, name, status string) string {
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+}
+
+func writeExternalSentinel(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sentinel")
+	if err := os.WriteFile(path, []byte("survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir, path
+}
+
+func assertPathExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("expected %s to survive: %v", path, err)
+	}
+}
+
+func TestRunsRejectsSymlinkedRunsParent(t *testing.T) {
+	root := t.TempDir()
+	metadata := filepath.Join(root, ".agentproof")
+	if err := os.MkdirAll(metadata, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external, sentinel := writeExternalSentinel(t)
+	writeRunDir(t, filepath.Join(external, "abandoned"), "abandoned")
+	if err := os.Symlink(external, filepath.Join(metadata, "runs")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Runs(root, Options{Confirm: true})
+	if result.Selected != 0 || result.Deleted != 0 || result.Failed != 1 {
+		t.Fatalf("symlinked runs parent should fail closed: %#v", result)
+	}
+	assertPathExists(t, filepath.Join(external, "abandoned"))
+	assertPathExists(t, sentinel)
+}
+
+func TestRunsRejectsRunsParentOutsideMetadataTree(t *testing.T) {
+	root := t.TempDir()
+	external, sentinel := writeExternalSentinel(t)
+	writeRunDir(t, filepath.Join(external, "runs", "abandoned"), "abandoned")
+	if err := os.Symlink(external, filepath.Join(root, ".agentproof")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Runs(root, Options{Confirm: true})
+	if result.Selected != 0 || result.Deleted != 0 || result.Failed != 1 {
+		t.Fatalf("runs parent outside metadata tree should fail closed: %#v", result)
+	}
+	assertPathExists(t, filepath.Join(external, "runs", "abandoned"))
+	assertPathExists(t, sentinel)
+}
+
+func TestRunsRechecksFinalPathBeforeDelete(t *testing.T) {
+	tests := []struct {
+		name        string
+		replacePath func(t *testing.T, path string) string
+	}{
+		{
+			name: "symlink",
+			replacePath: func(t *testing.T, path string) string {
+				external, sentinel := writeExternalSentinel(t)
+				if err := os.Symlink(external, path); err != nil {
+					t.Fatal(err)
+				}
+				return sentinel
+			},
+		},
+		{
+			name: "different real directory",
+			replacePath: func(t *testing.T, path string) string {
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				sentinel := filepath.Join(path, "replacement-sentinel")
+				if err := os.WriteFile(sentinel, []byte("survive"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return sentinel
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			run := writeRun(t, root, "abandoned", "abandoned")
+			held := run + "-held"
+			originalSentinel := filepath.Join(run, "original-sentinel")
+			if err := os.WriteFile(originalSentinel, []byte("survive"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var sentinel string
+			beforeDelete := func(path string) {
+				if path != run {
+					return
+				}
+				if err := os.Rename(path, held); err != nil {
+					t.Fatal(err)
+				}
+				sentinel = tt.replacePath(t, path)
+			}
+
+			result := runs(root, Options{Confirm: true}, beforeDelete)
+			if sentinel == "" {
+				t.Fatal("delete boundary was not exercised")
+			}
+			if result.Selected != 1 || result.Deleted != 0 || result.Failed != 1 {
+				t.Fatalf("replaced final run path should fail closed: %#v", result)
+			}
+			assertPathExists(t, held)
+			assertPathExists(t, filepath.Join(held, filepath.Base(originalSentinel)))
+			assertPathExists(t, sentinel)
+		})
+	}
+}
+
+func TestRunsRechecksRunsParentIdentityBeforeDelete(t *testing.T) {
+	root := t.TempDir()
+	run := writeRun(t, root, "abandoned", "abandoned")
+	runsParent := filepath.Dir(run)
+	heldParent := runsParent + "-held"
+	originalSentinel := filepath.Join(run, "original-sentinel")
+	if err := os.WriteFile(originalSentinel, []byte("survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var replacementSentinel string
+	beforeDelete := func(path string) {
+		if path != run {
+			return
+		}
+		if err := os.Rename(runsParent, heldParent); err != nil {
+			t.Fatal(err)
+		}
+		replacementRun := filepath.Join(runsParent, filepath.Base(run))
+		if err := os.MkdirAll(replacementRun, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		replacementSentinel = filepath.Join(replacementRun, "replacement-sentinel")
+		if err := os.WriteFile(replacementSentinel, []byte("survive"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := runs(root, Options{Confirm: true}, beforeDelete)
+	if replacementSentinel == "" {
+		t.Fatal("delete boundary was not exercised")
+	}
+	if result.Selected != 1 || result.Deleted != 0 || result.Failed != 1 {
+		t.Fatalf("replaced runs parent should fail closed: %#v", result)
+	}
+	assertPathExists(t, filepath.Join(heldParent, filepath.Base(run), filepath.Base(originalSentinel)))
+	assertPathExists(t, replacementSentinel)
+}
+
+func TestRunsRechecksMetadataRootIdentityBeforeDelete(t *testing.T) {
+	root := t.TempDir()
+	run := writeRun(t, root, "abandoned", "abandoned")
+	metadata := filepath.Join(root, ".agentproof")
+	heldMetadata := metadata + "-held"
+	originalSentinel := filepath.Join(run, "original-sentinel")
+	if err := os.WriteFile(originalSentinel, []byte("survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var replacementSentinel string
+	beforeDelete := func(path string) {
+		if path != run {
+			return
+		}
+		if err := os.Rename(metadata, heldMetadata); err != nil {
+			t.Fatal(err)
+		}
+		replacementRun := filepath.Join(metadata, "runs", filepath.Base(run))
+		if err := os.MkdirAll(replacementRun, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		replacementSentinel = filepath.Join(replacementRun, "replacement-sentinel")
+		if err := os.WriteFile(replacementSentinel, []byte("survive"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := runs(root, Options{Confirm: true}, beforeDelete)
+	if replacementSentinel == "" {
+		t.Fatal("delete boundary was not exercised")
+	}
+	if result.Selected != 1 || result.Deleted != 0 || result.Failed != 1 {
+		t.Fatalf("replaced metadata root should fail closed: %#v", result)
+	}
+	assertPathExists(t, filepath.Join(heldMetadata, "runs", filepath.Base(run), filepath.Base(originalSentinel)))
+	assertPathExists(t, replacementSentinel)
+}
+
+func TestRunsContinuesSkippingDirectChildSymlinks(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "abandoned", "abandoned")
+	external, sentinel := writeExternalSentinel(t)
+	if err := os.Symlink(external, filepath.Join(root, ".agentproof", "runs", "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Runs(root, Options{Confirm: true})
+	if result.Selected != 1 || result.Deleted != 1 || result.Failed != 0 {
+		t.Fatalf("direct child symlink should be skipped: %#v", result)
+	}
+	assertPathExists(t, sentinel)
+}
+
+func TestRunsRemoveAllFinalSymlinkDoesNotTouchTarget(t *testing.T) {
+	root := t.TempDir()
+	runs := filepath.Join(root, ".agentproof", "runs")
+	if err := os.MkdirAll(runs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external, sentinel := writeExternalSentinel(t)
+	link := filepath.Join(runs, "linked")
+	if err := os.Symlink(external, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(link); err != nil {
+		t.Fatal(err)
+	}
+	assertPathExists(t, sentinel)
 }
 
 func TestRunsPreviewsBeforeDeletion(t *testing.T) {
