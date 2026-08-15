@@ -13,6 +13,7 @@ const (
 	lockFileExclusiveLock   = 0x00000002
 	lockFileFailImmediately = 0x00000001
 	errorLockViolation      = syscall.Errno(33)
+	recordLockByteOffset    = recordLockMetadataMaxSize + 1
 )
 
 var (
@@ -126,9 +127,9 @@ func getFileAttributeTagInformation(handle syscall.Handle) (fileAttributeTagInfo
 
 func lockRecordFile(handle platformLockHandle) error {
 	var overlapped syscall.Overlapped
-	// Keep the mandatory byte-range lock beyond the bounded metadata region so
-	// contenders can still read diagnostic ownership bytes.
-	overlapped.Offset = recordLockMetadataMaxSize
+	// Reads include one oversize sentinel byte; lock the following byte so
+	// contenders can still inspect diagnostic ownership metadata.
+	overlapped.Offset = recordLockByteOffset
 	r1, _, callErr := procLockFileEx.Call(
 		uintptr(handle),
 		lockFileExclusiveLock|lockFileFailImmediately,
@@ -148,7 +149,7 @@ func lockRecordFile(handle platformLockHandle) error {
 
 func unlockRecordFile(handle platformLockHandle) error {
 	var overlapped syscall.Overlapped
-	overlapped.Offset = recordLockMetadataMaxSize
+	overlapped.Offset = recordLockByteOffset
 	r1, _, callErr := procUnlockFileEx.Call(
 		uintptr(handle),
 		0,
