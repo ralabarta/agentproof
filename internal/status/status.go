@@ -53,7 +53,6 @@ func Read(root string) (State, error) {
 		}
 	}
 
-
 	// evidence.json is the normalized evidence.Run emitted by verify: status and
 	// bundle_id live at the document root, not under a nested "run" object.
 	evPath := filepath.Join(root, config.DirName, "evidence.json")

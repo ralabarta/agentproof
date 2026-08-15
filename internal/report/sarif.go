@@ -18,11 +18,11 @@ func SARIF(run evidence.Run) ([]byte, error) {
 				Rules:          buildRules(run.Findings),
 			},
 		},
-		Results:      buildResults(run.Findings),
-		Invocations:  buildInvocations(run),
-		Artifacts:    buildArtifacts(run.Repository.Changes),
-		ColumnKind:   "utf16CodeUnits",
-		OriginalURI:  run.Repository.StartHead,
+		Results:     buildResults(run.Findings),
+		Invocations: buildInvocations(run),
+		Artifacts:   buildArtifacts(run.Repository.Changes),
+		ColumnKind:  "utf16CodeUnits",
+		OriginalURI: run.Repository.StartHead,
 	}
 
 	report := sarifReport{
@@ -35,18 +35,18 @@ func SARIF(run evidence.Run) ([]byte, error) {
 }
 
 type sarifReport struct {
-	Version string      `json:"version"`
-	Schema  string      `json:"$schema"`
-	Runs    []sarifRun  `json:"runs"`
+	Version string     `json:"version"`
+	Schema  string     `json:"$schema"`
+	Runs    []sarifRun `json:"runs"`
 }
 
 type sarifRun struct {
-	Tool         sarifTool         `json:"tool"`
-	Results      []sarifResult     `json:"results"`
-	Invocations  []sarifInvocation `json:"invocations,omitempty"`
-	Artifacts    []sarifArtifact   `json:"artifacts,omitempty"`
-	ColumnKind   string            `json:"columnKind"`
-	OriginalURI  string            `json:"originalUriBaseIds,omitempty"`
+	Tool        sarifTool         `json:"tool"`
+	Results     []sarifResult     `json:"results"`
+	Invocations []sarifInvocation `json:"invocations,omitempty"`
+	Artifacts   []sarifArtifact   `json:"artifacts,omitempty"`
+	ColumnKind  string            `json:"columnKind"`
+	OriginalURI string            `json:"originalUriBaseIds,omitempty"`
 }
 
 type sarifTool struct {
@@ -54,10 +54,10 @@ type sarifTool struct {
 }
 
 type sarifDriver struct {
-	Name           string       `json:"name"`
-	Version        string       `json:"version"`
-	InformationURI string       `json:"informationUri"`
-	Rules          []sarifRule  `json:"rules"`
+	Name           string      `json:"name"`
+	Version        string      `json:"version"`
+	InformationURI string      `json:"informationUri"`
+	Rules          []sarifRule `json:"rules"`
 }
 
 type sarifRule struct {
@@ -82,10 +82,10 @@ type sarifProperties struct {
 }
 
 type sarifResult struct {
-	RuleID    string             `json:"ruleId"`
-	Level     string             `json:"level"`
-	Message   sarifMessage       `json:"message"`
-	Locations []sarifLocation    `json:"locations,omitempty"`
+	RuleID     string            `json:"ruleId"`
+	Level      string            `json:"level"`
+	Message    sarifMessage      `json:"message"`
+	Locations  []sarifLocation   `json:"locations,omitempty"`
 	Properties *sarifResultProps `json:"properties,omitempty"`
 }
 
@@ -117,17 +117,17 @@ type sarifResultProps struct {
 }
 
 type sarifInvocation struct {
-	ExecutionSuccessful bool              `json:"executionSuccessful"`
-	StartTimeUTC        string            `json:"startTimeUtc,omitempty"`
-	EndTimeUTC          string            `json:"endTimeUtc,omitempty"`
-	ExitCode            int               `json:"exitCode"`
-	Properties          *sarifInvocProps  `json:"properties,omitempty"`
+	ExecutionSuccessful bool             `json:"executionSuccessful"`
+	StartTimeUTC        string           `json:"startTimeUtc,omitempty"`
+	EndTimeUTC          string           `json:"endTimeUtc,omitempty"`
+	ExitCode            int              `json:"exitCode"`
+	Properties          *sarifInvocProps `json:"properties,omitempty"`
 }
 
 type sarifInvocProps struct {
-	Agent      string `json:"agent,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Objective  string `json:"objective,omitempty"`
+	Agent       string `json:"agent,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Objective   string `json:"objective,omitempty"`
 	Association string `json:"association,omitempty"`
 }
 

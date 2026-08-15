@@ -12,8 +12,8 @@ import (
 	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/completion"
 	"github.com/ralabarta/agentproof/internal/config"
-	"github.com/ralabarta/agentproof/internal/gitx"
 	"github.com/ralabarta/agentproof/internal/doctor"
+	"github.com/ralabarta/agentproof/internal/gitx"
 	"github.com/ralabarta/agentproof/internal/purge"
 	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
@@ -81,7 +81,6 @@ func statusCommand(_ []string) (int, error) {
 	}
 	return 0, nil
 }
-
 
 func purgeCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("purge", flag.ContinueOnError)
