@@ -56,12 +56,14 @@ func Read(root string) (State, error) {
 	// evidence.json is the normalized evidence.Run emitted by verify: status and
 	// bundle_id live at the document root, not under a nested "run" object.
 	evPath := filepath.Join(root, config.DirName, "evidence.json")
+	evidenceDecoded := false
 	if data, err := os.ReadFile(evPath); err == nil {
 		var ev struct {
 			Status   string `json:"status"`
 			BundleID string `json:"bundle_id"`
 		}
 		if json.Unmarshal(data, &ev) == nil {
+			evidenceDecoded = true
 			s.LastStatus = ev.Status
 			s.LastBundleID = ev.BundleID
 		}
@@ -75,9 +77,11 @@ func Read(root string) (State, error) {
 	attPath := filepath.Join(root, config.DirName, "attestation.json")
 	if data, err := os.ReadFile(attPath); err == nil {
 		var att struct {
+			BundleID  string    `json:"bundle_id"`
 			CreatedAt time.Time `json:"created_at"`
 		}
-		if json.Unmarshal(data, &att) == nil {
+		if json.Unmarshal(data, &att) == nil &&
+			evidenceDecoded && s.LastBundleID != "" && att.BundleID != "" && s.LastBundleID == att.BundleID {
 			s.LastVerifiedAt = att.CreatedAt
 		}
 	}
