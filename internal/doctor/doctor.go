@@ -1,9 +1,13 @@
 package doctor
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 
+	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
 )
@@ -72,8 +76,8 @@ func Run(cwd string) (Report, error) {
 		// "recording" forever, indistinguishable from a live run except that a
 		// live record still owns a live lock.
 		stuck := s.RecordingRuns
-		if record.LiveRecord(cwd) && stuck > 0 {
-			stuck-- // the currently recording run is expected
+		if matchingLiveRecordingRun(cwd) && stuck > 0 {
+			stuck--
 		}
 		if stuck > 0 {
 			r.Findings = append(r.Findings, Finding{
@@ -104,4 +108,29 @@ func Run(cwd string) (Report, error) {
 		}
 	}
 	return r, nil
+}
+
+func matchingLiveRecordingRun(root string) bool {
+	lockStatus, err := record.RecordLockStatus(root)
+	if err != nil || !lockStatus.Active || lockStatus.Metadata == nil {
+		return false
+	}
+	entries, err := os.ReadDir(filepath.Join(root, config.DirName, "runs"))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() != lockStatus.Metadata.RunID {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, config.DirName, "runs", entry.Name(), "state.json"))
+		if err != nil {
+			return false
+		}
+		var state struct {
+			Status string `json:"status"`
+		}
+		return json.Unmarshal(data, &state) == nil && state.Status == "recording"
+	}
+	return false
 }

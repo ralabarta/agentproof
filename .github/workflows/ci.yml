@@ -20,6 +20,23 @@ jobs:
       - run: go vet ./...
       - run: go build -o bin/agentproof ./cmd/agentproof
 
+  windows-record-lock:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: "1.22.x"
+      - shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne "${{ github.event.pull_request.head.sha }}") {
+            throw "checkout did not resolve the pull request head SHA"
+          }
+      - run: go test ./internal/record
+
   verify:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

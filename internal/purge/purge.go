@@ -109,8 +109,8 @@ func Runs(root string, opts Options) Result {
 }
 
 // deadRun reports whether a run directory will never produce evidence. A
-// "recording" run is dead only when no live record owns the lock — otherwise
-// it is a record in progress.
+// "recording" run is dead unless it matches a valid live lock owner. An active
+// lock with malformed metadata fails closed because its owner cannot be proven.
 func deadRun(root, dir string) bool {
 	data, err := os.ReadFile(filepath.Join(dir, "state.json"))
 	if err != nil {
@@ -126,7 +126,17 @@ func deadRun(root, dir string) bool {
 	case "abandoned":
 		return true
 	case "recording":
-		return !record.LiveRecord(root)
+		lockStatus, err := record.RecordLockStatus(root)
+		if err != nil {
+			return false
+		}
+		if !lockStatus.Active {
+			return true
+		}
+		if lockStatus.Metadata == nil {
+			return false
+		}
+		return lockStatus.Metadata.RunID != filepath.Base(dir)
 	default:
 		return false
 	}

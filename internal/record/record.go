@@ -43,17 +43,20 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	if _, err := config.Load(root); err != nil {
 		return evidence.Run{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
 	}
-	release, err := acquireLock(root)
+	started := time.Now().UTC()
+	runID := started.Format("20060102T150405.000000000Z")
+	lock, err := acquireRecordLock(root, runID)
 	if err != nil {
 		return evidence.Run{}, err
 	}
-	defer release()
+	defer lock.Release()
 	start, err := gitx.TakeSnapshot(root)
 	if err != nil {
 		return evidence.Run{}, err
 	}
-	started := time.Now().UTC()
-	runID := started.Format("20060102T150405.000000000Z")
+	if err := validateRecordRoot(filepath.Join(root, config.DirName)); err != nil {
+		return evidence.Run{}, err
+	}
 	runDir := filepath.Join(root, config.DirName, "runs", runID)
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		return evidence.Run{}, err
@@ -232,60 +235,11 @@ func signalName(s os.Signal) string {
 	}
 }
 
-// LiveRecord reports whether a record is currently running in root, by
-// resolving the advisory lock PID against the running process set. It is how
-// doctor tells a genuinely recording run apart from one stuck after a crash
-// that bypassed signal handling (for example SIGKILL): both leave a
-// "recording" state.json, but only the live one still owns a live lock.
+// LiveRecord reports whether a record currently owns the repository's kernel
+// lock. Retained metadata is diagnostic only and never makes an idle lock live.
 func LiveRecord(root string) bool {
-	lockPath := filepath.Join(root, config.DirName, ".record.lock")
-	data, err := os.ReadFile(lockPath)
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		return false
-	}
-	return processAlive(pid)
-}
-
-// acquireLock takes the advisory .record.lock so two records cannot write
-// overlapping windows into the same repository. A lock whose PID is no longer
-// alive is stale and taken over; anything else fails closed so a live record
-// is never silently doubled.
-func acquireLock(root string) (func(), error) {
-	lockPath := filepath.Join(root, config.DirName, ".record.lock")
-	data, err := os.ReadFile(lockPath)
-	if err == nil {
-		if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil && pid > 0 && processAlive(pid) {
-			return nil, fmt.Errorf("%w: another agentproof record is already running (pid %d)", apperr.ErrUsage, pid)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-		return nil, err
-	}
-	return func() { _ = os.Remove(lockPath) }, nil
-}
-
-// processAlive reports whether a PID is running. Checking is conservative:
-// only a definitive "no such process" proves the PID is gone — ESRCH from
-// kill(2) on Unix, or ErrProcessDone when FindProcess already resolved the
-// PID against the running set (Linux). Anything else, including platforms
-// that cannot answer signal 0, keeps the lock blocking rather than risking a
-// parallel record.
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = proc.Signal(syscall.Signal(0))
-	if err == nil {
-		return true
-	}
-	return !errors.Is(err, syscall.ESRCH) && !errors.Is(err, os.ErrProcessDone)
+	status, err := statusRecordLock(root)
+	return err == nil && status.Active
 }
 
 func confidence(dirty bool) evidence.ClaimConfidence {
