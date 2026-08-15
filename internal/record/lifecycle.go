@@ -26,14 +26,15 @@ const (
 )
 
 type lifecycleDependencies struct {
-	writeState          func(string, runState) error
-	forwardSignal       func(*os.Process, os.Signal) processSignalForwarding
-	writeDiagnostic     func(string)
-	raiseSignal         func(os.Signal) bool
-	exitProcess         func(int)
-	handlerExit         func()
-	statePublishTimeout time.Duration
-	diagnosticTimeout   time.Duration
+	writeState             func(string, runState) error
+	forwardSignal          func(*os.Process, os.Signal) processSignalForwarding
+	writeDiagnostic        func(string)
+	raiseSignal            func(os.Signal) bool
+	awaitSignalTermination func()
+	exitProcess            func(int)
+	handlerExit            func()
+	statePublishTimeout    time.Duration
+	diagnosticTimeout      time.Duration
 }
 
 type runLifecycle struct {
@@ -63,6 +64,9 @@ func newRunLifecycle(statePath string, started time.Time, deps lifecycleDependen
 	}
 	if deps.raiseSignal == nil {
 		deps.raiseSignal = raiseSignal
+	}
+	if deps.awaitSignalTermination == nil {
+		deps.awaitSignalTermination = func() { select {} }
 	}
 	if deps.exitProcess == nil {
 		deps.exitProcess = os.Exit
@@ -230,6 +234,9 @@ func (l *runLifecycle) handleSignal(received os.Signal) {
 	}
 
 	if l.deps.raiseSignal(received) {
+		// Production waits for the kernel to terminate the process. Tests may
+		// release the injected wait; that returns without invoking fallback exit.
+		l.deps.awaitSignalTermination()
 		return
 	}
 	l.deps.exitProcess(1)

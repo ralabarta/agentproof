@@ -19,9 +19,10 @@ func TestAbandonedCannotBeOverwrittenByComplete(t *testing.T) {
 			statuses = append(statuses, state.Status)
 			return nil
 		},
-		forwardSignal:   func(*os.Process, os.Signal) processSignalForwarding { return processSignalNotRunning },
-		writeDiagnostic: func(string) {},
-		raiseSignal:     func(os.Signal) bool { return true },
+		forwardSignal:          func(*os.Process, os.Signal) processSignalForwarding { return processSignalNotRunning },
+		writeDiagnostic:        func(string) {},
+		raiseSignal:            func(os.Signal) bool { return true },
+		awaitSignalTermination: func() {},
 	})
 	startLifecycle(t, lc, &os.Process{Pid: 123})
 	lc.handleSignal(syscall.SIGTERM)
@@ -41,10 +42,11 @@ func TestHandlerJoinedBeforeRunReturns(t *testing.T) {
 	exitStarted := make(chan struct{})
 	releaseExit := make(chan struct{})
 	lc := newRunLifecycle("state.json", time.Time{}, lifecycleDependencies{
-		writeState:      func(string, runState) error { return nil },
-		forwardSignal:   func(*os.Process, os.Signal) processSignalForwarding { return processSignalNotRunning },
-		writeDiagnostic: func(string) {},
-		raiseSignal:     func(os.Signal) bool { return true },
+		writeState:             func(string, runState) error { return nil },
+		forwardSignal:          func(*os.Process, os.Signal) processSignalForwarding { return processSignalNotRunning },
+		writeDiagnostic:        func(string) {},
+		raiseSignal:            func(os.Signal) bool { return true },
+		awaitSignalTermination: func() {},
 		handlerExit: func() {
 			close(exitStarted)
 			<-releaseExit
@@ -80,8 +82,9 @@ func TestReapedChildIsNeverForwarded(t *testing.T) {
 			forwarded++
 			return processSignalForwarded
 		},
-		writeDiagnostic: func(string) {},
-		raiseSignal:     func(os.Signal) bool { return true },
+		writeDiagnostic:        func(string) {},
+		raiseSignal:            func(os.Signal) bool { return true },
+		awaitSignalTermination: func() {},
 	})
 	startLifecycle(t, lc, &os.Process{Pid: 123})
 	if err := lc.waitAndReap(func() error { return nil }); err != nil {
@@ -108,10 +111,11 @@ func TestBlockedStatePublicationStillForwardsAndTerminates(t *testing.T) {
 			close(forwarded)
 			return processSignalForwarded
 		},
-		writeDiagnostic:     func(string) {},
-		raiseSignal:         func(os.Signal) bool { close(terminated); return true },
-		statePublishTimeout: 20 * time.Millisecond,
-		diagnosticTimeout:   20 * time.Millisecond,
+		writeDiagnostic:        func(string) {},
+		raiseSignal:            func(os.Signal) bool { close(terminated); return true },
+		awaitSignalTermination: func() {},
+		statePublishTimeout:    20 * time.Millisecond,
+		diagnosticTimeout:      20 * time.Millisecond,
 	})
 	startLifecycle(t, lc, &os.Process{Pid: 123})
 	go lc.handleSignal(syscall.SIGTERM)
@@ -142,8 +146,9 @@ func TestBlockedDiagnosticDoesNotDelayTermination(t *testing.T) {
 			close(diagnosticStarted)
 			<-releaseDiagnostic
 		},
-		raiseSignal:       func(os.Signal) bool { close(terminated); return true },
-		diagnosticTimeout: 20 * time.Millisecond,
+		raiseSignal:            func(os.Signal) bool { close(terminated); return true },
+		awaitSignalTermination: func() {},
+		diagnosticTimeout:      20 * time.Millisecond,
 	})
 	startLifecycle(t, lc, &os.Process{Pid: 123})
 	go lc.handleSignal(syscall.SIGTERM)
@@ -154,6 +159,42 @@ func TestBlockedDiagnosticDoesNotDelayTermination(t *testing.T) {
 		t.Fatal("blocked diagnostic delayed exact termination")
 	}
 	close(releaseDiagnostic)
+}
+
+func TestSuccessfulRaiseWaitsForTermination(t *testing.T) {
+	awaitStarted := make(chan struct{})
+	releaseAwait := make(chan struct{})
+	exitCalled := make(chan struct{}, 1)
+	lc := newRunLifecycle("state.json", time.Time{}, lifecycleDependencies{
+		writeState:      func(string, runState) error { return nil },
+		forwardSignal:   func(*os.Process, os.Signal) processSignalForwarding { return processSignalNotRunning },
+		writeDiagnostic: func(string) {},
+		raiseSignal:     func(os.Signal) bool { return true },
+		awaitSignalTermination: func() {
+			close(awaitStarted)
+			<-releaseAwait
+		},
+		exitProcess: func(int) { exitCalled <- struct{}{} },
+	})
+
+	returned := make(chan struct{})
+	go func() {
+		lc.handleSignal(syscall.SIGTERM)
+		close(returned)
+	}()
+	<-awaitStarted
+	select {
+	case <-returned:
+		t.Fatal("handleSignal returned before signal termination")
+	default:
+	}
+	close(releaseAwait)
+	<-returned
+	select {
+	case <-exitCalled:
+		t.Fatal("successful signal raise fell back to exitProcess")
+	default:
+	}
 }
 
 func TestAbandonedPublicationPrecedesForwarding(t *testing.T) {
@@ -172,8 +213,9 @@ func TestAbandonedPublicationPrecedesForwarding(t *testing.T) {
 			events = append(events, "forwarded")
 			return processSignalForwarded
 		},
-		writeDiagnostic: func(string) {},
-		raiseSignal:     func(os.Signal) bool { return true },
+		writeDiagnostic:        func(string) {},
+		raiseSignal:            func(os.Signal) bool { return true },
+		awaitSignalTermination: func() {},
 	})
 	startLifecycle(t, lc, &os.Process{Pid: 123})
 	lc.handleSignal(syscall.SIGTERM)
