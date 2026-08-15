@@ -2,10 +2,13 @@ package doctor_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ralabarta/agentproof/internal/doctor"
 )
@@ -68,29 +71,155 @@ func TestDoctor_WarnsOnStuckRecordingRuns(t *testing.T) {
 	}
 }
 
-// A "recording" run that still owns a live lock is a record in progress, not
-// a stuck run, and must not be reported.
-func TestDoctor_SilentWhileRecordingRunIsLive(t *testing.T) {
+func TestDoctorCountsOnlyMatchingLiveRecordingRun(t *testing.T) {
 	dir := initialized(t)
-	if err := os.MkdirAll(filepath.Join(dir, ".agentproof", "runs", "live"), 0o700); err != nil {
+	oldRun := filepath.Join(dir, ".agentproof", "runs", "old-recording")
+	if err := os.MkdirAll(oldRun, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	stateData, _ := json.Marshal(map[string]string{"status": "recording"})
-	if err := os.WriteFile(filepath.Join(dir, ".agentproof", "runs", "live", "state.json"), stateData, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(oldRun, "state.json"), stateData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// The test process itself owns the lock, so the recording run is live.
-	if err := os.WriteFile(filepath.Join(dir, ".agentproof", ".record.lock"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	startRecordLockHelper(t, dir, "active-recording")
 
 	report, err := doctor.Run(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasFinding(report, "stuck-recording-runs", doctor.SeverityWarn) {
-		t.Fatal("a live record must not be reported as stuck")
+	finding, ok := findFinding(report, "stuck-recording-runs", doctor.SeverityWarn)
+	if !ok {
+		t.Fatal("a recording run with a different live lock owner must remain a warning")
 	}
+	if !strings.Contains(finding.Detail, "1 run(s)") {
+		t.Fatalf("stuck recording detail = %q, want one run", finding.Detail)
+	}
+
+	activeRun := filepath.Join(dir, ".agentproof", "runs", "active-recording")
+	if err := os.MkdirAll(activeRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(activeRun, "state.json"), stateData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err = doctor.Run(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, ok = findFinding(report, "stuck-recording-runs", doctor.SeverityWarn)
+	if !ok || !strings.Contains(finding.Detail, "1 run(s)") {
+		t.Fatalf("only the old run should remain stuck when the active run matches: %#v", report.Findings)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".agentproof", ".record.lock"), []byte("malformed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err = doctor.Run(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, ok = findFinding(report, "stuck-recording-runs", doctor.SeverityWarn)
+	if !ok || !strings.Contains(finding.Detail, "2 run(s)") {
+		t.Fatalf("malformed metadata must leave both recording runs visible: %#v", report.Findings)
+	}
+}
+
+func startRecordLockHelper(t *testing.T, root, runID string) {
+	t.Helper()
+	control := t.TempDir()
+	result := filepath.Join(control, "result")
+	release := filepath.Join(control, "release")
+	cmd := exec.Command("go", "test", "./internal/record", "-run=^TestRecordLockProcessHelper$", "-count=1")
+	cmd.Dir = filepath.Join("..", "..")
+	cmd.Env = append(os.Environ(),
+		"AP_RECORD_LOCK_HELPER=1",
+		"AP_RECORD_LOCK_ROOT="+root,
+		"AP_RECORD_LOCK_RUN_ID="+runID,
+		"AP_RECORD_LOCK_MODE=hold",
+		"AP_RECORD_LOCK_RESULT="+result,
+		"AP_RECORD_LOCK_RELEASE="+release,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	helper := monitorRecordLockHelper(cmd)
+	t.Cleanup(func() {
+		cleanupRecordLockHelper(t, helper, release)
+	})
+	if got := waitForRecordLockHelper(t, helper, result); got != "acquired" {
+		t.Fatalf("record lock helper result = %q, want acquired", got)
+	}
+}
+
+type recordLockHelperProcess struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+	err  error
+}
+
+func monitorRecordLockHelper(cmd *exec.Cmd) *recordLockHelperProcess {
+	helper := &recordLockHelperProcess{cmd: cmd, done: make(chan struct{})}
+	go func() {
+		helper.err = cmd.Wait()
+		close(helper.done)
+	}()
+	return helper
+}
+
+func cleanupRecordLockHelper(t *testing.T, helper *recordLockHelperProcess, release string) {
+	t.Helper()
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		killAndReapRecordLockHelper(t, helper)
+		t.Errorf("signal record lock helper release: %v", err)
+		return
+	}
+	select {
+	case <-helper.done:
+		if helper.err != nil {
+			t.Errorf("record lock helper failed: %v", helper.err)
+		}
+	case <-time.After(2 * time.Second):
+		killAndReapRecordLockHelper(t, helper)
+		t.Error("timed out waiting for record lock helper; killed and reaped process")
+	}
+}
+
+func killAndReapRecordLockHelper(t *testing.T, helper *recordLockHelperProcess) {
+	t.Helper()
+	if err := helper.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		t.Errorf("kill record lock helper: %v", err)
+	}
+	select {
+	case <-helper.done:
+	case <-time.After(2 * time.Second):
+		t.Error("timed out reaping record lock helper after kill")
+	}
+}
+
+func waitForRecordLockHelper(t *testing.T, helper *recordLockHelperProcess, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var last string
+	var lastErr error
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			last = strings.TrimSpace(string(data))
+			if last == "acquired" {
+				return last
+			}
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-helper.done:
+			t.Fatalf("record lock helper exited before publishing acquired: %v (last result %q, read error %v)", helper.err, last, lastErr)
+		default:
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for record lock helper to publish acquired at %s (last result %q, read error %v)", path, last, lastErr)
+	return ""
 }
 
 func initialized(t *testing.T) string {
@@ -106,10 +235,15 @@ func initialized(t *testing.T) string {
 }
 
 func hasFinding(report doctor.Report, name string, severity doctor.Severity) bool {
+	_, ok := findFinding(report, name, severity)
+	return ok
+}
+
+func findFinding(report doctor.Report, name string, severity doctor.Severity) (doctor.Finding, bool) {
 	for _, f := range report.Findings {
 		if f.Name == name && f.Severity == severity {
-			return true
+			return f, true
 		}
 	}
-	return false
+	return doctor.Finding{}, false
 }

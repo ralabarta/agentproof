@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,15 +151,17 @@ func TestRunStateJSONContract(t *testing.T) {
 	}
 }
 
-// A live lock must fail closed: two records in one repository would write
-// overlapping windows and poison the Git association evidence.
+// A live kernel lock must fail closed: two records in one repository would
+// write overlapping windows and poison the Git association evidence.
 func TestRecordLockRejectsParallelRecord(t *testing.T) {
 	root := newRepo(t)
-	lockPath := filepath.Join(root, config.DirName, ".record.lock")
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+	lock, err := acquireRecordLock(root, "parallel-holder")
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err := Run(root, Options{Objective: "x", Command: []string{"sh", "-c", "true"}})
+	defer lock.Release()
+
+	_, err = Run(root, Options{Objective: "x", Command: []string{"sh", "-c", "true"}})
 	if err == nil {
 		t.Fatal("expected a live lock to block a second record")
 	}
@@ -169,49 +170,53 @@ func TestRecordLockRejectsParallelRecord(t *testing.T) {
 	}
 }
 
-// A lock left behind by a dead process is stale and must not block; after the
-// run the lock file is gone again.
+// Retained diagnostic metadata on an idle permanent lock must not block a new
+// record or make the lock path disappear after release.
 func TestRecordLockIgnoresStaleLock(t *testing.T) {
 	root := newRepo(t)
-	dead := exec.Command("sh", "-c", "exit 0")
-	if err := dead.Run(); err != nil {
-		t.Fatal(err)
-	}
 	lockPath := filepath.Join(root, config.DirName, ".record.lock")
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(dead.ProcessState.Pid())), 0o600); err != nil {
+	if err := os.WriteFile(lockPath, []byte(`{"version":1,"ownerID":"invalid","runID":"stale","pid":-1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Run(root, Options{Objective: "x", Command: []string{"sh", "-c", "true"}}); err != nil {
-		t.Fatalf("a stale lock must not block a record: %v", err)
+	run, err := Run(root, Options{Objective: "x", Command: []string{"sh", "-c", "true"}})
+	if err != nil {
+		t.Fatalf("stale metadata must not block a record: %v", err)
 	}
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Fatalf("the lock must be released after the run, got %v", err)
+	if info, err := os.Lstat(lockPath); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("released lock must remain a regular file: info=%v err=%v", info, err)
+	}
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := parseRecordLockMetadata(data)
+	if err != nil {
+		t.Fatalf("released lock metadata is invalid: %v", err)
+	}
+	if metadata.RunID != run.RunID {
+		t.Fatalf("lock runID = %q, state runID = %q", metadata.RunID, run.RunID)
 	}
 }
 
-// LiveRecord resolves the lock PID against the running process set, which is
-// how doctor separates a live record from a run stuck after a hard crash.
+// LiveRecord probes kernel ownership; retained metadata never makes an idle
+// permanent lock appear active.
 func TestLiveRecordDistinguishesActiveFromStaleLocks(t *testing.T) {
 	root := newRepo(t)
-	lockPath := filepath.Join(root, config.DirName, ".record.lock")
 	if LiveRecord(root) {
-		t.Fatal("expected no live record without a lock file")
+		t.Fatal("expected no live record without an owner")
 	}
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+	lock, err := acquireRecordLock(root, "live-record")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !LiveRecord(root) {
-		t.Fatal("expected a live record for the current process pid")
+		t.Fatal("expected a live record while the kernel lock is held")
 	}
-	dead := exec.Command("sh", "-c", "exit 0")
-	if err := dead.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(dead.ProcessState.Pid())), 0o600); err != nil {
+	if err := lock.Release(); err != nil {
 		t.Fatal(err)
 	}
 	if LiveRecord(root) {
-		t.Fatal("expected no live record for a stale lock")
+		t.Fatal("expected retained metadata to remain inactive after release")
 	}
 }
 
