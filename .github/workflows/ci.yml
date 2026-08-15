@@ -55,3 +55,6 @@ jobs:
           test-results: .agentproof/inputs/go-test.jsonl
           require-tests: "true"
           fail-on: critical
+      - name: Report failed test events
+        if: failure()
+        run: jq -c 'select(.Action == "fail") | {Action, Package, Test, Elapsed}' .agentproof/inputs/go-test.jsonl
