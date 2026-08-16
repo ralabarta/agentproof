@@ -27,7 +27,7 @@ var commands = []commandSpec{
 	{Name: "init", Desc: "Create a local-first AgentProof configuration", Args: []string{"--force"}},
 	{Name: "record", Desc: "Record an agent command and its Git change window", Args: []string{"--objective", "--agent", "--model", "--retain-raw"}},
 	{Name: "verify", Desc: "Ingest evidence and generate deterministic integrity reports", Args: []string{"--base", "--test-result", "--require-tests", "--fail-on"}},
-	{Name: "purge", Desc: "Preview or delete opted-in raw command logs", Args: []string{"--raw", "--older-than", "--confirm"}},
+	{Name: "purge", Desc: "Preview or delete opted-in raw command logs", Args: []string{"--raw", "--runs", "--older-than", "--confirm"}},
 	{Name: "runs", Desc: "List recorded runs"},
 	{Name: "status", Desc: "Show AgentProof state"},
 	{Name: "doctor", Desc: "Run diagnostic checks"},
@@ -69,13 +69,23 @@ _agentproof() {
 {{end}}    esac
     return 0
 }
-_agentproof "$@"
+compdef _agentproof agentproof
 `
 
 const fishTmpl = `# fish completion for agentproof
 {{range .}}complete -c agentproof -n '__fish_use_subcommand' -a '{{.Name}}' -d '{{.Desc}}'
 {{end}}{{range .}}{{if .Args}}complete -c agentproof -n '__fish_seen_subcommand_from {{.Name}}' -a '{{range .Args}}{{.}} {{end}}'
 {{end}}{{end}}`
+
+// CommandOptions returns a copy of the completion options for name.
+func CommandOptions(name string) []string {
+	for _, command := range commands {
+		if command.Name == name {
+			return append([]string(nil), command.Args...)
+		}
+	}
+	return nil
+}
 
 // Generate writes a completion script for the requested shell. An unsupported
 // shell is an error and writes nothing.

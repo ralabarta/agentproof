@@ -82,20 +82,34 @@ func statusCommand(_ []string) (int, error) {
 	return 0, nil
 }
 
-func purgeCommand(args []string) (int, error) {
+type purgeFlags struct {
+	raw       *bool
+	runDirs   *bool
+	olderThan *time.Duration
+	confirm   *bool
+}
+
+func newPurgeFlagSet() (*flag.FlagSet, purgeFlags) {
 	fs := flag.NewFlagSet("purge", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	raw := fs.Bool("raw", false, "select opted-in raw command logs")
-	runDirs := fs.Bool("runs", false, "select abandoned or stuck run directories")
-	olderThan := fs.Duration("older-than", 7*24*time.Hour, "minimum age, for example 168h")
-	confirm := fs.Bool("confirm", false, "delete selected files; otherwise preview only")
+	flags := purgeFlags{
+		raw:       fs.Bool("raw", false, "select opted-in raw command logs"),
+		runDirs:   fs.Bool("runs", false, "select abandoned or stuck run directories"),
+		olderThan: fs.Duration("older-than", 7*24*time.Hour, "minimum age, for example 168h"),
+		confirm:   fs.Bool("confirm", false, "delete selected files; otherwise preview only"),
+	}
+	return fs, flags
+}
+
+func purgeCommand(args []string) (int, error) {
+	fs, flags := newPurgeFlagSet()
 	if err := fs.Parse(args); err != nil {
 		return 2, err
 	}
-	if !*raw && !*runDirs {
+	if !*flags.raw && !*flags.runDirs {
 		return 2, errors.New("purge requires --raw or --runs")
 	}
-	if *olderThan < 0 {
+	if *flags.olderThan < 0 {
 		return 2, errors.New("--older-than cannot be negative")
 	}
 	cwd, _ := os.Getwd()
@@ -104,20 +118,20 @@ func purgeCommand(args []string) (int, error) {
 		return classify(err), err
 	}
 	result := purge.Result{}
-	if *raw {
-		r := purge.Raw(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+	if *flags.raw {
+		r := purge.Raw(root, purge.Options{OlderThan: *flags.olderThan, Confirm: *flags.confirm})
 		result.Selected += r.Selected
 		result.Deleted += r.Deleted
 		result.Failed += r.Failed
 	}
-	if *runDirs {
-		r := purge.Runs(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+	if *flags.runDirs {
+		r := purge.Runs(root, purge.Options{OlderThan: *flags.olderThan, Confirm: *flags.confirm})
 		result.Selected += r.Selected
 		result.Deleted += r.Deleted
 		result.Failed += r.Failed
 	}
 	fmt.Fprintf(os.Stdout, "Selected: %d; deleted: %d; failed: %d\n", result.Selected, result.Deleted, result.Failed)
-	if !*confirm {
+	if !*flags.confirm {
 		fmt.Fprintln(os.Stdout, "Preview only. Re-run with --confirm to delete the selected files.")
 	}
 	if result.Failed > 0 {

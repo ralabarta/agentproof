@@ -2,6 +2,9 @@ package completion_test
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -44,6 +47,49 @@ func TestGenerateZsh(t *testing.T) {
 	}
 }
 
+func TestGenerateZshRegistersDirectSourceWithCompdef(t *testing.T) {
+	out := generate(t, "zsh")
+	if !strings.Contains(out, "\ncompdef _agentproof agentproof\n") {
+		t.Fatal("zsh completion must register _agentproof with compdef")
+	}
+
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh is not installed")
+	}
+	tempDir := t.TempDir()
+	cmd := exec.Command("zsh", "-fc", "autoload -Uz compinit; compinit -D; source /dev/stdin; (( $+_comps[agentproof] ))")
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "FPATH=") {
+			cmd.Env = append(cmd.Env, env)
+		}
+	}
+	cmd.Env = append(cmd.Env, "HOME="+tempDir, "ZDOTDIR="+tempDir)
+	cmd.Stdin = strings.NewReader(out)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("source generated zsh completion: %v: %s", err, output)
+	}
+	if dumps, err := filepath.Glob(filepath.Join(tempDir, ".zcompdump*")); err != nil {
+		t.Fatalf("glob zsh completion dumps: %v", err)
+	} else if len(dumps) != 0 {
+		t.Errorf("compinit created completion dump files: %v", dumps)
+	}
+}
+
+func TestGenerateZshDoesNotInvokeCompletionDuringSource(t *testing.T) {
+	out := generate(t, "zsh")
+	if strings.Contains(out, "\n_agentproof \"$@\"\n") {
+		t.Fatal("zsh completion must not invoke _agentproof while being sourced")
+	}
+}
+
+func TestGeneratePurgeIncludesRunsSelector(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		if out := generate(t, shell); !strings.Contains(out, "--runs") {
+			t.Errorf("%s completion missing purge selector --runs", shell)
+		}
+	}
+}
+
 func TestGenerateFish(t *testing.T) {
 	out := generate(t, "fish")
 	if !strings.Contains(out, "complete -c agentproof") {
@@ -53,6 +99,17 @@ func TestGenerateFish(t *testing.T) {
 		if !strings.Contains(out, cmd) {
 			t.Errorf("fish completion missing command %q", cmd)
 		}
+	}
+}
+
+func TestCommandOptionsReturnsCopy(t *testing.T) {
+	options := completion.CommandOptions("purge")
+	if len(options) == 0 {
+		t.Fatal("purge command options must not be empty")
+	}
+	options[0] = "--mutated"
+	if fresh := completion.CommandOptions("purge"); len(fresh) == 0 || fresh[0] == "--mutated" {
+		t.Fatalf("CommandOptions leaked mutable command state: %v", fresh)
 	}
 }
 
