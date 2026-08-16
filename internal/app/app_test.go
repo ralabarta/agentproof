@@ -1,10 +1,15 @@
 package app
 
 import (
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
+
+	"github.com/ralabarta/agentproof/internal/completion"
 )
 
 // The exit codes are a documented public contract that CI systems branch on:
@@ -85,6 +90,48 @@ func TestPurgeRequiresASelector(t *testing.T) {
 	chdir(t, gitRepo(t))
 	if code, err := Run([]string{"purge"}, "test"); code != 2 {
 		t.Fatalf("purge without a selector is invalid usage: got %d (%v)", code, err)
+	}
+}
+
+func TestCompletionPurgeOptionsMatchPurgeParser(t *testing.T) {
+	fs, _ := newPurgeFlagSet()
+	var parserOptions []string
+	fs.VisitAll(func(f *flag.Flag) {
+		parserOptions = append(parserOptions, "--"+f.Name)
+	})
+	completionOptions := completion.CommandOptions("purge")
+	sort.Strings(parserOptions)
+	sort.Strings(completionOptions)
+	if !reflect.DeepEqual(completionOptions, parserOptions) {
+		t.Fatalf("purge completion options = %v, parser options = %v", completionOptions, parserOptions)
+	}
+}
+
+func TestPurgeZeroAgeSelectsRecentRun(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	runDir := filepath.Join(root, ".agentproof", "runs", "recent")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "state.json"), []byte(`{"status":"abandoned"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if code, err := Run([]string{"purge", "--runs", "--older-than", "0"}, "test"); code != 0 {
+		t.Fatalf("zero-age purge preview should succeed: got %d (%v)", code, err)
+	}
+	if _, err := os.Stat(runDir); err != nil {
+		t.Fatalf("preview must preserve selected run: %v", err)
+	}
+	if code, err := Run([]string{"purge", "--runs", "--older-than", "0", "--confirm"}, "test"); code != 0 {
+		t.Fatalf("zero-age purge confirmation should succeed: got %d (%v)", code, err)
+	}
+	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
+		t.Fatalf("zero-age purge did not select and delete recent run: %v", err)
 	}
 }
 

@@ -67,7 +67,7 @@ func Run(cwd string) (Report, error) {
 			r.Findings = append(r.Findings, Finding{
 				Name:     "abandoned-runs",
 				Severity: SeverityWarn,
-				Detail:   fmt.Sprintf("%d abandoned run(s) — consider running `agentproof purge`", s.AbandonedRuns),
+				Detail:   fmt.Sprintf("%d abandoned run(s) — consider running `agentproof purge --runs --older-than 0`", s.AbandonedRuns),
 			})
 		}
 
