@@ -86,6 +86,155 @@ Every human-facing claim is classified on three independent axes. This is the co
 | `contaminated-baseline` | Uncommitted work predated recording and cannot be separated out |
 | `unknown-uncaptured-worktree` | Changed content could not be captured, so the range is incomplete |
 
+## Architecture
+
+AgentProof is a local-first, capability-oriented Go modular monolith. Claude Code or Codex remains an external process: AgentProof wraps and observes it but makes no model calls; its core work is deterministic parsing, hashing, scanning, graph traversal, verification, and rendering.
+
+### 1. System context and trust boundaries
+
+```mermaid
+flowchart LR
+  Developer["Developer"]
+  Reviewer["Reviewer"]
+
+  subgraph External["External AI process"]
+    Agent["Claude Code or Codex"]
+  end
+
+  subgraph Local["Local machine boundary"]
+    CLI["AgentProof Go CLI"]
+    Repo["Git repository"]
+    Sessions["Native session JSONL"]
+    Tests["JUnit or test2json artifacts"]
+    Store["Local .agentproof evidence"]
+    Outputs["Markdown, HTML, JSON, SARIF"]
+  end
+
+  subgraph CI["CI boundary"]
+    Action["Workflow and composite Action"]
+    Checkout["Exact-head Git checkout"]
+    CIArtifacts["Supplied test artifacts"]
+  end
+
+  Developer -->|"starts record or verify"| CLI
+  CLI -->|"wraps and observes; no model API"| Agent
+  Agent -->|"changes files"| Repo
+  Agent -->|"emits native history"| Sessions
+  CLI -->|"snapshots and reads"| Repo
+  CLI -->|"bounded parsing"| Sessions
+  CLI -->|"ingests as data; never executes"| Tests
+  CLI -->|"atomic 0600 writes"| Store
+  Store --> Outputs
+  Reviewer -->|"reviews evidence"| Outputs
+  Action -->|"runs bounded verification"| CLI
+  Checkout --> Action
+  CIArtifacts --> Action
+```
+
+### 2. Internal modular architecture
+
+```mermaid
+flowchart TB
+  subgraph Entry["CLI entry"]
+    Cmd["cmd/agentproof"]
+    App["internal/app"]
+    Cmd --> App
+  end
+
+  subgraph Orchestration["Use-case orchestrators"]
+    Record["record"]
+    Verify["verify"]
+    Status["status"]
+    Doctor["doctor"]
+    Purge["purge"]
+  end
+
+  subgraph Capabilities["Adapters and capabilities"]
+    Gitx["gitx"]
+    Session["session"]
+    TestResult["testresult"]
+    Scan["scan"]
+    Impact["impact"]
+  end
+
+  subgraph Shared["Shared contracts and publication"]
+    Config["config"]
+    Evidence["evidence contracts"]
+    SafeFile["safefile"]
+    Report["report renderers"]
+  end
+
+  App --> Record
+  App --> Verify
+  App --> Status
+  App --> Doctor
+  App --> Purge
+  Record --> Gitx
+  Record --> Session
+  Record --> Scan
+  Verify --> Gitx
+  Verify --> TestResult
+  Verify --> Scan
+  Verify --> Impact
+  Record --> Evidence
+  Verify --> Evidence
+  Status --> Config
+  Doctor --> Config
+  Doctor --> Record
+  Doctor --> Status
+  Purge --> SafeFile
+  Record --> SafeFile
+  Verify --> SafeFile
+  Verify --> Report
+  Report --> Evidence
+```
+
+### 3. Evidence lifecycle
+
+```mermaid
+sequenceDiagram
+  actor Dev as Developer
+  participant CLI as AgentProof
+  participant Lock as Kernel lock
+  participant Git as Git repository
+  participant Store as .agentproof
+  participant Agent as Claude Code or Codex
+  participant Session as Session JSONL
+  participant Tests as Test artifacts
+  participant Reports as Rendered reports
+
+  Dev->>CLI: record objective and agent command
+  CLI->>Lock: Acquire kernel-backed lock
+  CLI->>Git: Capture initial snapshot
+  CLI->>Store: Atomically persist recording lifecycle
+  CLI->>Agent: Execute external process
+  Agent->>Git: Modify worktree
+  Agent-->>Session: Emit native session history
+  alt Process completes
+    Agent-->>CLI: Exit result
+    CLI->>Git: Capture final snapshot and delta
+    CLI->>CLI: Deterministic scan and redaction
+    CLI->>Session: Bounded discovery and summarization
+    CLI->>Store: Atomically persist complete run
+  else Signal interrupts recording
+    CLI->>Store: Atomically persist abandoned run
+  end
+  CLI->>Lock: Release lock
+
+  Dev->>CLI: verify latest run or base comparison
+  CLI->>Store: Load latest run or comparison inputs
+  CLI->>CLI: Scan and import impact graph
+  CLI->>Tests: Ingest bounded artifacts as data only
+  CLI->>CLI: Build canonical manifest
+  CLI->>CLI: Compute SHA-256 bundle identity, completeness, and status
+  CLI->>Store: Atomically publish manifest and evidence
+  CLI->>Store: Publish attestation
+  CLI->>Reports: Render Markdown, HTML, and SARIF
+  Reports-->>Dev: Reviewable evidence bundle
+```
+
+> **Architecture guarantees.** AgentProof treats sessions, patches, and test artifacts as untrusted data; bounds parsers and graph traversal; enforces containment and symlink checks; redacts before persistence; uses atomic `0600` writes; and emits escaped offline reports. Its CI path verifies the exact checked-out HEAD with read-only repository permissions, and verification never executes supplied tests. SHA-256 detects mutation; it does **not** prove authorship, causality, completeness, correctness, merge safety, or that an agent produced a change.
+
 ## Install
 
 Download a release archive and verify it against `checksums.txt`, or build from source with Go 1.22+:
