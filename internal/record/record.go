@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,6 +30,12 @@ type Options struct {
 	Command   []string
 	RetainRaw bool
 }
+
+const (
+	abandonedStatePublicationDiagnostic = "agentproof: abandoned-state publication failed"
+	processSignalNotRunningDiagnostic   = "agentproof: signal forwarding failed: child process is not running"
+	processSignalUnsupportedDiagnostic  = "agentproof: signal forwarding failed: unsupported signal or platform"
+)
 
 func Run(cwd string, opts Options) (evidence.Run, error) {
 	if len(opts.Command) == 0 {
@@ -64,30 +69,23 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 	statePath := filepath.Join(runDir, "state.json")
 
 	// The lifecycle state file is how status and doctor detect interrupted
-	// runs. The handler must be armed before the recording state is written so
-	// a poller that observes "recording" can rely on an interrupt being caught;
-	// the buffered channel lets the runtime queue the signal even before the
-	// goroutine is scheduled.
-	var interrupted atomic.Bool
+	// runs. The handler is armed before recording is published so observing that
+	// state guarantees interrupt handling is active.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	go func() {
-		received := <-signals
-		interrupted.Store(true)
-		_ = writeRunState(statePath, runState{Status: "abandoned", StartedAt: started, Signal: signalName(received)})
-		// Re-raise with the default disposition so a shell observes the
-		// conventional 128+signal status; on platforms without signal
-		// re-delivery, exit explicitly instead of lingering.
-		if raiseSignal(received) {
-			return
+	lifecycle := newRunLifecycle(statePath, started, lifecycleDependencies{})
+	lifecycle.startHandler(signals)
+	handlerStopped := false
+	defer func() {
+		if !handlerStopped {
+			lifecycle.stopHandler(func() { signal.Stop(signals) })
 		}
-		os.Exit(1)
 	}()
-	if err := writeRunState(statePath, runState{Status: "recording", StartedAt: started}); err != nil {
+	if err := lifecycle.publishRecording(); err != nil {
 		return evidence.Run{}, err
 	}
 	cmd := exec.Command(opts.Command[0], opts.Command[1:]...)
+	configureProcess(cmd)
 	cmd.Dir = root
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -107,7 +105,12 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 		cmd.Stdout = io.MultiWriter(os.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(os.Stderr, logWriter)
 	}
-	runErr := cmd.Run()
+	runErr := lifecycle.startCommand(cmd.Start, func() *os.Process { return cmd.Process })
+	if runErr == nil {
+		runErr = lifecycle.waitAndReap(cmd.Wait)
+	}
+	lifecycle.stopHandler(func() { signal.Stop(signals) })
+	handlerStopped = true
 	if logWriter != nil {
 		_ = logWriter.Close()
 	}
@@ -124,14 +127,8 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 		}
 	}
 	finished := time.Now().UTC()
-	// The command ran to completion (even if it failed), so the run is not
-	// abandoned. The interrupted flag is set by the signal handler before it
-	// writes the abandoned state, which keeps the final state correct even when
-	// a signal races with this write.
-	if !interrupted.Load() {
-		if err := writeRunState(statePath, runState{Status: "complete", StartedAt: started, CompletedAt: &finished}); err != nil {
-			return evidence.Run{}, err
-		}
+	if err := lifecycle.publishComplete(runState{Status: "complete", StartedAt: started, CompletedAt: &finished}); err != nil {
+		return evidence.Run{}, err
 	}
 	end, err := gitx.TakeSnapshot(root)
 	if err != nil {
@@ -219,6 +216,17 @@ func writeRunState(path string, state runState) error {
 		return err
 	}
 	return safefile.Write(path, append(b, '\n'), 0o600)
+}
+
+func processSignalForwardingDiagnostic(result processSignalForwarding) string {
+	switch result {
+	case processSignalForwarded:
+		return ""
+	case processSignalNotRunning:
+		return processSignalNotRunningDiagnostic
+	default:
+		return processSignalUnsupportedDiagnostic
+	}
 }
 
 func signalName(s os.Signal) string {

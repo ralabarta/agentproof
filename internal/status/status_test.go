@@ -120,10 +120,110 @@ func TestReadPopulatesVerificationFields(t *testing.T) {
 	}
 }
 
-// TestReadWithoutAttestation verifies graceful degradation: evidence.json can
-// exist without its attestation (a crash between the two atomic writes), in
-// which case the bundle identity and status still load and the timestamp stays
-// zero instead of erroring.
+func TestReadCorrelatesEvidenceAndAttestationBundleIDs(t *testing.T) {
+	verifiedAt := time.Date(2026, 8, 15, 10, 0, 0, 0, time.UTC)
+	dir := assertMismatchedVerification(t, verifiedAt)
+
+	writeVerificationFiles(t, filepath.Join(dir, ".agentproof"), "bundle-a", "bundle-a", verifiedAt)
+	s, err := status.Read(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !s.LastVerifiedAt.Equal(verifiedAt) {
+		t.Fatalf("expected LastVerifiedAt %v for matching bundles, got %v", verifiedAt, s.LastVerifiedAt)
+	}
+}
+
+func TestReadSuppressesTimestampForMismatchedBundle(t *testing.T) {
+	assertMismatchedVerification(t, time.Date(2026, 8, 15, 11, 0, 0, 0, time.UTC))
+}
+
+func assertMismatchedVerification(t *testing.T, verifiedAt time.Time) string {
+	t.Helper()
+	dir := initializedDir(t)
+	writeVerificationFiles(t, filepath.Join(dir, ".agentproof"), "bundle-a", "bundle-b", verifiedAt)
+
+	s, err := status.Read(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.LastStatus != "passed" || s.LastBundleID != "bundle-a" {
+		t.Fatalf("expected evidence-sourced status/bundle, got %q / %q", s.LastStatus, s.LastBundleID)
+	}
+	if !s.LastVerifiedAt.IsZero() {
+		t.Fatalf("expected zero LastVerifiedAt for mismatched bundles, got %v", s.LastVerifiedAt)
+	}
+	return dir
+}
+
+func TestReadAcceptsMatchingBundleGeneration(t *testing.T) {
+	verifiedAt := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name             string
+		evidenceBundleID string
+		attBundleID      string
+		attestation      string
+		wantTimestamp    bool
+	}{
+		{name: "matching nonempty bundle IDs", evidenceBundleID: "bundle-a", attBundleID: "bundle-a", wantTimestamp: true},
+		{name: "empty evidence bundle ID", attBundleID: "bundle-a"},
+		{name: "empty attestation bundle ID", evidenceBundleID: "bundle-a"},
+		{name: "both bundle IDs empty"},
+		{name: "missing attestation", evidenceBundleID: "bundle-a", attestation: "missing"},
+		{name: "malformed attestation", evidenceBundleID: "bundle-a", attestation: "malformed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := initializedDir(t)
+			apDir := filepath.Join(dir, ".agentproof")
+			writeVerificationFiles(t, apDir, tt.evidenceBundleID, tt.attBundleID, verifiedAt)
+			switch tt.attestation {
+			case "missing":
+				if err := os.Remove(filepath.Join(apDir, "attestation.json")); err != nil {
+					t.Fatal(err)
+				}
+			case "malformed":
+				if err := os.WriteFile(filepath.Join(apDir, "attestation.json"), []byte("{not json"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			s, err := status.Read(dir)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if s.LastStatus != "passed" || s.LastBundleID != tt.evidenceBundleID {
+				t.Fatalf("expected evidence-sourced status/bundle, got %q / %q", s.LastStatus, s.LastBundleID)
+			}
+			if tt.wantTimestamp && !s.LastVerifiedAt.Equal(verifiedAt) {
+				t.Fatalf("expected LastVerifiedAt %v, got %v", verifiedAt, s.LastVerifiedAt)
+			}
+			if !tt.wantTimestamp && !s.LastVerifiedAt.IsZero() {
+				t.Fatalf("expected zero LastVerifiedAt, got %v", s.LastVerifiedAt)
+			}
+		})
+	}
+}
+
+func writeVerificationFiles(t *testing.T, apDir, evidenceBundleID, attestationBundleID string, verifiedAt time.Time) {
+	t.Helper()
+	evidenceBytes, err := json.Marshal(evidence.Run{Status: "passed", BundleID: evidenceBundleID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "evidence.json"), evidenceBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attestationBytes, err := json.Marshal(evidence.Attestation{BundleID: attestationBundleID, CreatedAt: verifiedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "attestation.json"), attestationBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReadWithoutAttestation(t *testing.T) {
 	dir := initializedDir(t)
 	apDir := filepath.Join(dir, ".agentproof")

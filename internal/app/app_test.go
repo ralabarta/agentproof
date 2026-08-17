@@ -1,11 +1,62 @@
 package app
 
 import (
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/ralabarta/agentproof/internal/completion"
 )
+
+func TestRootHelpListsPublicCommands(t *testing.T) {
+	output := captureStdout(t, func() {
+		if code, err := Run([]string{"--help"}, "test"); code != 0 || err != nil {
+			t.Fatalf("root help should succeed: got %d (%v)", code, err)
+		}
+	})
+	for _, command := range []string{"init", "record", "verify", "runs", "status", "doctor", "purge", "completion"} {
+		if !strings.Contains(output, "\n  "+command+" ") {
+			t.Errorf("root help does not list %q:\n%s", command, output)
+		}
+	}
+	if !strings.Contains(output, "agentproof purge --runs --older-than 168h [--confirm]") {
+		t.Errorf("root help does not include purge --runs guidance:\n%s", output)
+	}
+}
+
+func TestPurgeHelpPrintsOptionsAndSucceeds(t *testing.T) {
+	output := captureStdout(t, func() {
+		if code, err := Run([]string{"purge", "--help"}, "test"); code != 0 || err != nil {
+			t.Fatalf("purge help should succeed: got %d (%v)", code, err)
+		}
+	})
+	for _, option := range []string{"-raw", "-runs", "-older-than", "-confirm"} {
+		if !strings.Contains(output, option) {
+			t.Errorf("purge help does not list %q:\n%s", option, output)
+		}
+	}
+}
+
+func TestPurgeUnknownFlagDoesNotWriteToStdout(t *testing.T) {
+	output := captureStdout(t, func() {
+		code, err := Run([]string{"purge", "--unknown"}, "test")
+		if code != 2 {
+			t.Fatalf("unknown purge flag should be invalid usage: got %d (%v)", code, err)
+		}
+		if err == nil {
+			t.Fatal("unknown purge flag should return an error")
+		}
+	})
+	if output != "" {
+		t.Fatalf("unknown purge flag wrote to stdout: %q", output)
+	}
+}
 
 // The exit codes are a documented public contract that CI systems branch on:
 // 2 is invalid usage or configuration, 3 is an internal or adapter failure.
@@ -88,6 +139,48 @@ func TestPurgeRequiresASelector(t *testing.T) {
 	}
 }
 
+func TestCompletionPurgeOptionsMatchPurgeParser(t *testing.T) {
+	fs, _ := newPurgeFlagSet()
+	var parserOptions []string
+	fs.VisitAll(func(f *flag.Flag) {
+		parserOptions = append(parserOptions, "--"+f.Name)
+	})
+	completionOptions := completion.CommandOptions("purge")
+	sort.Strings(parserOptions)
+	sort.Strings(completionOptions)
+	if !reflect.DeepEqual(completionOptions, parserOptions) {
+		t.Fatalf("purge completion options = %v, parser options = %v", completionOptions, parserOptions)
+	}
+}
+
+func TestPurgeZeroAgeSelectsRecentRun(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	runDir := filepath.Join(root, ".agentproof", "runs", "recent")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "state.json"), []byte(`{"status":"abandoned"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if code, err := Run([]string{"purge", "--runs", "--older-than", "0"}, "test"); code != 0 {
+		t.Fatalf("zero-age purge preview should succeed: got %d (%v)", code, err)
+	}
+	if _, err := os.Stat(runDir); err != nil {
+		t.Fatalf("preview must preserve selected run: %v", err)
+	}
+	if code, err := Run([]string{"purge", "--runs", "--older-than", "0", "--confirm"}, "test"); code != 0 {
+		t.Fatalf("zero-age purge confirmation should succeed: got %d (%v)", code, err)
+	}
+	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
+		t.Fatalf("zero-age purge did not select and delete recent run: %v", err)
+	}
+}
+
 func TestCompletionCommand(t *testing.T) {
 	// Completions do not depend on a Git repository, so a plain temp dir is fine.
 	chdir(t, t.TempDir())
@@ -105,6 +198,31 @@ func TestCompletionCommand(t *testing.T) {
 	if code, err := Run([]string{"completion", "bash", "zsh"}, "test"); code != 2 {
 		t.Fatalf("more than one shell is invalid usage: got %d (%v)", code, err)
 	}
+}
+
+func captureStdout(t *testing.T, run func()) string {
+	t.Helper()
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = previous })
+
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
 }
 
 func chdir(t *testing.T, dir string) {

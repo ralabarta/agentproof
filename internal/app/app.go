@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -82,20 +83,40 @@ func statusCommand(_ []string) (int, error) {
 	return 0, nil
 }
 
-func purgeCommand(args []string) (int, error) {
+type purgeFlags struct {
+	raw       *bool
+	runDirs   *bool
+	olderThan *time.Duration
+	confirm   *bool
+}
+
+func newPurgeFlagSet() (*flag.FlagSet, purgeFlags) {
 	fs := flag.NewFlagSet("purge", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	raw := fs.Bool("raw", false, "select opted-in raw command logs")
-	runDirs := fs.Bool("runs", false, "select abandoned or stuck run directories")
-	olderThan := fs.Duration("older-than", 7*24*time.Hour, "minimum age, for example 168h")
-	confirm := fs.Bool("confirm", false, "delete selected files; otherwise preview only")
+	flags := purgeFlags{
+		raw:       fs.Bool("raw", false, "select opted-in raw command logs"),
+		runDirs:   fs.Bool("runs", false, "select abandoned or stuck run directories"),
+		olderThan: fs.Duration("older-than", 7*24*time.Hour, "minimum age, for example 168h"),
+		confirm:   fs.Bool("confirm", false, "delete selected files; otherwise preview only"),
+	}
+	return fs, flags
+}
+
+func purgeCommand(args []string) (int, error) {
+	fs, flags := newPurgeFlagSet()
+	var output bytes.Buffer
+	fs.SetOutput(&output)
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			_, _ = io.Copy(os.Stdout, &output)
+			return 0, nil
+		}
 		return 2, err
 	}
-	if !*raw && !*runDirs {
+	if !*flags.raw && !*flags.runDirs {
 		return 2, errors.New("purge requires --raw or --runs")
 	}
-	if *olderThan < 0 {
+	if *flags.olderThan < 0 {
 		return 2, errors.New("--older-than cannot be negative")
 	}
 	cwd, _ := os.Getwd()
@@ -104,20 +125,20 @@ func purgeCommand(args []string) (int, error) {
 		return classify(err), err
 	}
 	result := purge.Result{}
-	if *raw {
-		r := purge.Raw(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+	if *flags.raw {
+		r := purge.Raw(root, purge.Options{OlderThan: *flags.olderThan, Confirm: *flags.confirm})
 		result.Selected += r.Selected
 		result.Deleted += r.Deleted
 		result.Failed += r.Failed
 	}
-	if *runDirs {
-		r := purge.Runs(root, purge.Options{OlderThan: *olderThan, Confirm: *confirm})
+	if *flags.runDirs {
+		r := purge.Runs(root, purge.Options{OlderThan: *flags.olderThan, Confirm: *flags.confirm})
 		result.Selected += r.Selected
 		result.Deleted += r.Deleted
 		result.Failed += r.Failed
 	}
 	fmt.Fprintf(os.Stdout, "Selected: %d; deleted: %d; failed: %d\n", result.Selected, result.Deleted, result.Failed)
-	if !*confirm {
+	if !*flags.confirm {
 		fmt.Fprintln(os.Stdout, "Preview only. Re-run with --confirm to delete the selected files.")
 	}
 	if result.Failed > 0 {
@@ -235,6 +256,7 @@ Usage:
   agentproof verify --test-result test-results.jsonl [--require-tests]
   agentproof verify --base origin/main
   agentproof purge --raw --older-than 168h [--confirm]
+  agentproof purge --runs --older-than 168h [--confirm]
   agentproof completion bash
 
 Commands:
@@ -250,6 +272,9 @@ Commands:
               --test-result <path>    JUnit XML or Go test2json artifact; repeatable
               --require-tests         fail when no valid test evidence is supplied
               --fail-on <severity>    critical, high, medium, low, or none
+  runs      List recorded runs
+  status    Show local AgentProof status
+  doctor    Check local AgentProof health
   purge     Preview or delete raw logs and dead runs
               --raw                   select opted-in raw command logs
               --runs                  select abandoned or stuck run directories

@@ -72,28 +72,67 @@ runs:
         "$RUNNER_TEMP/agentproof" "${args[@]}"
         verify_code=$?
         set -e
-        if [ -f .agentproof/evidence.json ]; then
-          echo "conclusion=$(jq -r '.status' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
-          echo "bundle-id=$(jq -r '.bundle_id' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
-          echo "completeness=$(jq -r '.completeness.percent' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
-          echo "integrity=$(jq -r '.integrity' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
-          echo "critical-violations=$(jq '[.findings[] | select(.severity == "critical")] | length' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
-          echo "warnings=$(jq -r '.warning_count' .agentproof/evidence.json)" >> "$GITHUB_OUTPUT"
+        output_code=0
+        set +e
+        printf 'evidence-valid=false\n' >> "$GITHUB_OUTPUT"
+        output_code=$?
+        if [ "$output_code" -eq 0 ] && [ -f .agentproof/evidence.json ]; then
+          jq -r '
+            def safe_line_string:
+              type == "string" and
+              (contains("\r") | not) and
+              (contains("\n") | not);
+            def valid_status:
+              safe_line_string and
+              (. == "passed" or . == "warning" or . == "failed");
+            def valid_integrity:
+              safe_line_string and
+              (. == "passed" or . == "failed" or . == "unknown" or . == "valid");
+            def valid_findings:
+              . == null or
+              (type == "array" and all(.[]; type == "object" and (.severity | safe_line_string)));
+            if
+              (.status | valid_status) and
+              (.bundle_id | safe_line_string) and
+              (.completeness | type == "object") and
+              (.completeness.percent | type == "number" and . >= 0 and . <= 100) and
+              (.integrity | valid_integrity) and
+              (.warning_count | type == "number" and . >= 0 and floor == .) and
+              (.findings | valid_findings)
+            then
+              "conclusion=\(.status)",
+              "bundle-id=\(.bundle_id)",
+              "completeness=\(.completeness.percent)",
+              "integrity=\(.integrity)",
+              "critical-violations=" + ([.findings // [] | .[] | select(.severity == "critical")] | length | tostring),
+              "warnings=\(.warning_count)"
+            else
+              error("invalid AgentProof evidence output schema")
+            end
+          ' .agentproof/evidence.json >> "$GITHUB_OUTPUT"
+          output_code=$?
+          if [ "$output_code" -eq 0 ]; then
+            printf 'evidence-valid=true\n' >> "$GITHUB_OUTPUT"
+            output_code=$?
+          fi
         else
-          echo "conclusion=failed" >> "$GITHUB_OUTPUT"
+          printf 'conclusion=failed\n' >> "$GITHUB_OUTPUT"
+          output_code=$?
         fi
-        exit "$verify_code"
-    - name: Write Step Summary
+        set -e
+        if [ "$verify_code" -ne 0 ]; then
+          exit "$verify_code"
+        fi
+        exit "$output_code"
+    - name: Step Summary
+      id: summary
       shell: bash
-      if: always()
+      if: always() && steps.verify.outputs.evidence-valid == 'true'
       run: |
-        if [ -f .agentproof/report.md ]; then
-          printf '## AgentProof\n\n' >> "$GITHUB_STEP_SUMMARY"
-          cat .agentproof/report.md >> "$GITHUB_STEP_SUMMARY"
-        fi
+        "${{ github.action_path }}/scripts/write-step-summary.sh"
     - name: Upload AgentProof reports
-      if: always() && hashFiles('.agentproof/report.md') != ''
-      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      if: always() && steps.verify.outputs.evidence-valid == 'true' && steps.summary.outcome == 'success' && hashFiles('.agentproof/report.md') != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: agentproof-report
         path: |
