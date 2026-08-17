@@ -50,6 +50,34 @@ func TestDoctor_Initialized(t *testing.T) {
 	}
 }
 
+func TestDoctorRecommendsValidRunPurgeCommand(t *testing.T) {
+	dir := initialized(t)
+	runDir := filepath.Join(dir, ".agentproof", "runs", "abandoned")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stateData, _ := json.Marshal(map[string]string{"status": "abandoned"})
+	if err := os.WriteFile(filepath.Join(runDir, "state.json"), stateData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := doctor.Run(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, ok := findFinding(report, "abandoned-runs", doctor.SeverityWarn)
+	if !ok {
+		t.Fatal("expected an abandoned-runs warn finding")
+	}
+	want := "1 abandoned run(s) — consider running `agentproof purge --runs --older-than 0`"
+	if finding.Detail != want {
+		t.Fatalf("abandoned run guidance = %q, want %q", finding.Detail, want)
+	}
+	if strings.Contains(finding.Detail, "--confirm") {
+		t.Fatal("first abandoned run recommendation must be a preview without --confirm")
+	}
+}
+
 // A run whose state.json stays "recording" after its process is gone (a crash
 // that bypassed signal handling, such as SIGKILL) must surface as a warning.
 func TestDoctor_WarnsOnStuckRecordingRuns(t *testing.T) {
