@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -103,7 +104,13 @@ func newPurgeFlagSet() (*flag.FlagSet, purgeFlags) {
 
 func purgeCommand(args []string) (int, error) {
 	fs, flags := newPurgeFlagSet()
+	var output bytes.Buffer
+	fs.SetOutput(&output)
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			_, _ = io.Copy(os.Stdout, &output)
+			return 0, nil
+		}
 		return 2, err
 	}
 	if !*flags.raw && !*flags.runDirs {
@@ -249,6 +256,7 @@ Usage:
   agentproof verify --test-result test-results.jsonl [--require-tests]
   agentproof verify --base origin/main
   agentproof purge --raw --older-than 168h [--confirm]
+  agentproof purge --runs --older-than 168h [--confirm]
   agentproof completion bash
 
 Commands:
@@ -264,6 +272,9 @@ Commands:
               --test-result <path>    JUnit XML or Go test2json artifact; repeatable
               --require-tests         fail when no valid test evidence is supplied
               --fail-on <severity>    critical, high, medium, low, or none
+  runs      List recorded runs
+  status    Show local AgentProof status
+  doctor    Check local AgentProof health
   purge     Preview or delete raw logs and dead runs
               --raw                   select opted-in raw command logs
               --runs                  select abandoned or stuck run directories
