@@ -37,7 +37,7 @@
 
 ## Phase 5: Documentation and delivery
 
-- [ ] Update lifecycle, security, architecture, and threat-model documentation after behavior is green.
+- [x] Update lifecycle, security, architecture, and threat-model documentation after behavior is green.
 - [ ] Create only the conventional commits listed in the implementation plan.
 - [ ] Do not add `Co-Authored-By` trailers or AI attribution.
 - [ ] Run `/finalize` after normalization and full verification.

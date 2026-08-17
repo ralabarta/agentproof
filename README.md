@@ -465,6 +465,7 @@ Built-in rules cover secret-like additions and high-risk paths including authent
 - Native session artifacts are summarized and hashed; raw prompts are never copied into reports.
 - Secret-like values are removed before patches are persisted.
 - Paths, JSON/XML records, file sizes, graph expansion, and nesting are all bounded.
+- Recording uses a persistent `.record.lock` file with an OS-backed lock, while `doctor` and `purge` use run-ID-aware liveness checks; see the [architecture](docs/architecture.md) and [threat model](docs/threat-model.md).
 - Reports escape untrusted Markdown and HTML; the HTML report has no scripts and no external assets.
 - SHA-256 detects post-capture mutation. It does **not** establish source authenticity, authorship, completeness, correctness, or safety.
 

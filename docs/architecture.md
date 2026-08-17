@@ -36,7 +36,7 @@ Hashes detect modification after capture. They do not prove authenticity, author
 
 ### Record
 
-1. Resolve the Git repository, capture HEAD plus working-tree state, and acquire an advisory lock that rejects parallel records.
+1. Resolve the Git repository, capture HEAD plus working-tree state, and acquire an OS-backed lock on the persistent `.record.lock` file; the held OS lock is authoritative for parallel-record ownership.
 2. Write the per-run lifecycle state (`recording`) and run the explicitly supplied agent command; SIGINT and SIGTERM mark the run `abandoned` with the signal recorded.
 3. Capture final Git state and separate committed from working-tree changes.
 4. Scan the in-memory patch for deterministic findings.
@@ -45,6 +45,8 @@ Hashes detect modification after capture. They do not prove authenticity, author
 7. Write normalized run evidence atomically with mode `0600` and mark the run `complete`.
 
 Raw command output is retained only with `--retain-raw`.
+
+The lock file remains a regular file after release. Its versioned, 64 KiB-bounded metadata supports diagnostics and run-ID correlation but never grants ownership; release cannot unlock another owner. `doctor` and `purge` use that run ID for liveness correlation. Purge reads lifecycle `state.json` only through a no-follow opened regular file bounded to 64 KiB. These controls apply to supported local filesystems; active concurrent component replacement remains outside their descriptor-relative coverage.
 
 ### Verify
 
