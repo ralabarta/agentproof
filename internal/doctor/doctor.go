@@ -1,13 +1,13 @@
 package doctor
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/ralabarta/agentproof/internal/config"
+	"github.com/ralabarta/agentproof/internal/purge"
 	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
 )
@@ -123,14 +123,8 @@ func matchingLiveRecordingRun(root string) bool {
 		if !entry.IsDir() || entry.Name() != lockStatus.Metadata.RunID {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, config.DirName, "runs", entry.Name(), "state.json"))
-		if err != nil {
-			return false
-		}
-		var state struct {
-			Status string `json:"status"`
-		}
-		return json.Unmarshal(data, &state) == nil && state.Status == "recording"
+		state, err := purge.ReadStateStatus(filepath.Join(root, config.DirName, "runs", entry.Name()))
+		return err == nil && state == "recording"
 	}
 	return false
 }
