@@ -14,6 +14,15 @@ type lifecycleState struct {
 	Status string `json:"status"`
 }
 
+// ReadStateStatus safely reads the lifecycle status for a run directory.
+func ReadStateStatus(dir string) (string, error) {
+	state, err := readState(dir)
+	if err != nil {
+		return "", err
+	}
+	return state.Status, nil
+}
+
 func readState(dir string) (lifecycleState, error) {
 	path := filepath.Join(dir, "state.json")
 	pathInfo, err := os.Lstat(path)
