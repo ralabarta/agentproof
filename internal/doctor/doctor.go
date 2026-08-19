@@ -83,7 +83,7 @@ func Run(cwd string) (Report, error) {
 			r.Findings = append(r.Findings, Finding{
 				Name:     "stuck-recording-runs",
 				Severity: SeverityWarn,
-				Detail:   fmt.Sprintf("%d run(s) stuck in the recording state — the record process died without completing; consider purging them", stuck),
+				Detail:   fmt.Sprintf("%d run(s) stuck in the recording state — the record process died without completing; consider running `agentproof purge --runs --older-than 0`", stuck),
 			})
 		}
 	}

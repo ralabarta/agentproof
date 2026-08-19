@@ -94,8 +94,13 @@ func TestDoctor_WarnsOnStuckRecordingRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasFinding(report, "stuck-recording-runs", doctor.SeverityWarn) {
+	finding, ok := findFinding(report, "stuck-recording-runs", doctor.SeverityWarn)
+	if !ok {
 		t.Fatal("expected a stuck-recording-runs warn finding")
+	}
+	want := "1 run(s) stuck in the recording state — the record process died without completing; consider running `agentproof purge --runs --older-than 0`"
+	if finding.Detail != want {
+		t.Fatalf("stuck recording guidance = %q, want %q", finding.Detail, want)
 	}
 }
 
