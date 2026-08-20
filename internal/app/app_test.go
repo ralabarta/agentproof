@@ -30,6 +30,33 @@ func TestRootHelpListsPublicCommands(t *testing.T) {
 	}
 }
 
+func TestStatusOmitsLastVerifiedWithoutAttestation(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 || err != nil {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, ".agentproof", "evidence.json"),
+		[]byte(`{"status":"passed","bundle_id":"bundle-1"}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if code, err := Run([]string{"status"}, "test"); code != 0 || err != nil {
+			t.Fatalf("status should succeed: got %d (%v)", code, err)
+		}
+	})
+	if !strings.Contains(output, "Last status:   passed\nLast bundle:   bundle-1\n") {
+		t.Fatalf("status omitted available verification state:\n%s", output)
+	}
+	if strings.Contains(output, "Last verified:") || strings.Contains(output, "0001-01-01") {
+		t.Fatalf("status rendered a missing verification timestamp:\n%s", output)
+	}
+}
+
 func TestPurgeHelpPrintsOptionsAndSucceeds(t *testing.T) {
 	output := captureStdout(t, func() {
 		if code, err := Run([]string{"purge", "--help"}, "test"); code != 0 || err != nil {

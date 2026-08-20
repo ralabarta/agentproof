@@ -78,7 +78,9 @@ func statusCommand(_ []string) (int, error) {
 	if s.LastStatus != "" {
 		fmt.Fprintf(os.Stdout, "Last status:   %s\n", s.LastStatus)
 		fmt.Fprintf(os.Stdout, "Last bundle:   %s\n", s.LastBundleID)
-		fmt.Fprintf(os.Stdout, "Last verified: %s\n", s.LastVerifiedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		if !s.LastVerifiedAt.IsZero() {
+			fmt.Fprintf(os.Stdout, "Last verified: %s\n", s.LastVerifiedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		}
 	}
 	return 0, nil
 }
