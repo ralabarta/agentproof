@@ -103,6 +103,20 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
+func TestNoArgumentCommandsRejectUnexpectedArguments(t *testing.T) {
+	for _, command := range []string{"status", "runs", "doctor"} {
+		t.Run(command, func(t *testing.T) {
+			code, err := Run([]string{command, "unexpected"}, "test")
+			if code != 2 {
+				t.Errorf("code = %d, want 2", code)
+			}
+			if err == nil {
+				t.Fatal("expected an invalid usage error")
+			}
+		})
+	}
+}
+
 func TestVerifyWithoutInitIsUsageNotInternalFailure(t *testing.T) {
 	chdir(t, gitRepo(t))
 	if code, err := Run([]string{"verify"}, "test"); code != 2 {

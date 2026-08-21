@@ -54,7 +54,10 @@ func Run(args []string, version string) (int, error) {
 	}
 }
 
-func statusCommand(_ []string) (int, error) {
+func statusCommand(args []string) (int, error) {
+	if len(args) != 0 {
+		return 2, errors.New("status does not accept arguments")
+	}
 	cwd, _ := os.Getwd()
 	s, err := status.Read(cwd)
 	if err != nil {
@@ -295,7 +298,10 @@ A recorded agent's own exit code is evidence inside the report; it never
 becomes AgentProof's exit code.`)
 }
 
-func runsCommand(_ []string) (int, error) {
+func runsCommand(args []string) (int, error) {
+	if len(args) != 0 {
+		return 2, errors.New("runs does not accept arguments")
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return 3, err
@@ -329,7 +335,10 @@ func completionCommand(args []string) (int, error) {
 	return 0, nil
 }
 
-func doctorCommand(_ []string) (int, error) {
+func doctorCommand(args []string) (int, error) {
+	if len(args) != 0 {
+		return 2, errors.New("doctor does not accept arguments")
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return 3, err
