@@ -62,5 +62,10 @@ func Load(root string) (Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return Config{}, err
 	}
+	switch cfg.FailOn {
+	case "critical", "high", "medium", "low", "none":
+	default:
+		return Config{}, fmt.Errorf("invalid fail_on %q: must be critical, high, medium, low, or none", cfg.FailOn)
+	}
 	return cfg, nil
 }
