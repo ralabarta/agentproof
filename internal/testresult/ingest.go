@@ -189,6 +189,7 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 	decoder := xml.NewDecoder(bytes.NewReader(b))
 	count := 0
 	suiteSeen := false
+	testCaseSeen := false
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
@@ -211,6 +212,7 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 		if start.Name.Local != "testcase" {
 			continue
 		}
+		testCaseSeen = true
 		var testCase struct {
 			Time    string    `xml:"time,attr"`
 			Failure *struct{} `xml:"failure"`
@@ -234,6 +236,9 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 	}
 	if !suiteSeen {
 		return errors.New("XML is not a JUnit test suite")
+	}
+	if !testCaseSeen {
+		return errors.New("JUnit test suite contains no testcases")
 	}
 	return nil
 }
