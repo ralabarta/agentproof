@@ -29,6 +29,20 @@ func TestIngestJUnitFailure(t *testing.T) {
 	}
 }
 
+func TestIngestJUnitRequiresTestCase(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "junit.xml"), `<testsuite/>`)
+
+	result, records := Ingest(root, []string{"junit.xml"}, true)
+
+	if records[0].State == evidence.Observed {
+		t.Fatalf("empty JUnit suite was observed: %#v", records[0])
+	}
+	if result.Passed {
+		t.Fatalf("empty JUnit suite yielded a passing result: %#v", result)
+	}
+}
+
 func TestIngestRejectsTraversalAndMissing(t *testing.T) {
 	root := t.TempDir()
 	_, traversal := Ingest(root, []string{"../outside.xml"}, true)
