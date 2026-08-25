@@ -171,6 +171,44 @@ func TestRecordWithoutCommandIsUsage(t *testing.T) {
 	}
 }
 
+func TestRecordRejectsUnsupportedAgentBeforeSideEffects(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is unavailable")
+	}
+	root := t.TempDir()
+	chdir(t, root)
+	marker := filepath.Join(root, "command-ran")
+
+	code, err := Run([]string{"record", "--agent", "cursor", "--", "sh", "-c", `printf side-effect > "$1"`, "sh", marker}, "test")
+	if code != 2 {
+		t.Fatalf("unsupported record agent should be invalid usage: got %d (%v)", code, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "--agent") || !strings.Contains(err.Error(), "cursor") {
+		t.Fatalf("unsupported record agent should return an agent-specific error: %v", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("unsupported record agent ran the command: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".agentproof")); !os.IsNotExist(statErr) {
+		t.Fatalf("unsupported record agent changed repository state: %v", statErr)
+	}
+}
+
+func TestRecordAcceptsSupportedAgentsCaseInsensitively(t *testing.T) {
+	for _, agent := range []string{"CoDeX", "CLAUDE", "ClAuDe-CoDe"} {
+		t.Run(agent, func(t *testing.T) {
+			chdir(t, gitRepo(t))
+			code, err := Run([]string{"record", "--agent", agent}, "test")
+			if code != 2 {
+				t.Fatalf("record without a command should be invalid usage: got %d (%v)", code, err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "record requires a command after --") {
+				t.Fatalf("supported agent should reach missing-command validation: %v", err)
+			}
+		})
+	}
+}
+
 // Purge requires a selector: without --raw or --runs there is nothing to
 // preview or delete, and the invocation is invalid usage.
 func TestPurgeRequiresASelector(t *testing.T) {

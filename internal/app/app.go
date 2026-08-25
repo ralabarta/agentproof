@@ -175,11 +175,16 @@ func recordCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("record", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	objective := fs.String("objective", "", "original objective given to the coding agent")
-	agent := fs.String("agent", "codex", "session adapter: codex or claude")
+	agent := fs.String("agent", "codex", "session adapter: codex, claude, or claude-code")
 	model := fs.String("model", "", "model identifier when known")
 	retainRaw := fs.Bool("retain-raw", false, "retain raw command output locally for this run")
 	if err := fs.Parse(args); err != nil {
 		return 2, err
+	}
+	switch strings.ToLower(*agent) {
+	case "codex", "claude", "claude-code":
+	default:
+		return 2, fmt.Errorf("unsupported --agent %q; must be codex, claude, or claude-code", *agent)
 	}
 	cwd, _ := os.Getwd()
 	run, err := record.Run(cwd, record.Options{Objective: *objective, Agent: *agent, Model: *model, Command: fs.Args(), RetainRaw: *retainRaw})
@@ -269,7 +274,7 @@ Commands:
               --force                 replace an existing configuration
   record    Record an agent command and its Git change window
               --objective <text>      objective given to the coding agent
-              --agent <name>          session adapter: codex or claude
+              --agent <name>          session adapter: codex, claude, or claude-code
               --model <id>            model identifier when known
               --retain-raw            retain raw command output locally
   verify    Ingest evidence and generate deterministic integrity reports
