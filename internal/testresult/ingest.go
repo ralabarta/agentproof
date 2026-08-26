@@ -133,6 +133,7 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	states := map[string]string{}
 	count := 0
+	eventSeen := false
 	packageFailed := false
 	for scanner.Scan() {
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
@@ -151,6 +152,10 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return errors.New("malformed Go test2json event")
 		}
+		switch event.Action {
+		case "start", "run", "pause", "cont", "pass", "bench", "fail", "output", "skip":
+			eventSeen = true
+		}
 		if event.Test == "" {
 			if event.Action == "fail" {
 				packageFailed = true
@@ -166,7 +171,7 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	if err := scanner.Err(); err != nil {
 		return errors.New("Go test2json event exceeds line limit")
 	}
-	if count == 0 {
+	if !eventSeen {
 		return errors.New("test result contains no events")
 	}
 	for _, state := range states {
