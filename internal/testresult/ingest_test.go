@@ -20,6 +20,38 @@ func TestIngestGoTestJSON(t *testing.T) {
 	}
 }
 
+func TestIngestGoTestJSONRequiresRecognizedEvent(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      string
+		wantObserved bool
+		wantPassed   bool
+		wantReason   string
+	}{
+		{name: "unrecognized JSON", content: "{}\n", wantReason: "test result contains no events"},
+		{name: "package-level event", content: "{\"Action\":\"start\",\"Package\":\"example\"}\n", wantObserved: true, wantPassed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "test.jsonl"), tt.content)
+
+			result, records := Ingest(root, []string{"test.jsonl"}, true)
+
+			if got := records[0].State == evidence.Observed; got != tt.wantObserved {
+				t.Fatalf("observed = %v, want %v: %#v", got, tt.wantObserved, records[0])
+			}
+			if result.Passed != tt.wantPassed {
+				t.Fatalf("passed = %v, want %v: %#v", result.Passed, tt.wantPassed, result)
+			}
+			if records[0].Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", records[0].Reason, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestIngestJUnitFailure(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "junit.xml"), `<testsuite><testcase name="ok" time="0.1"/><testcase name="bad"><failure>no</failure></testcase></testsuite>`)
