@@ -118,6 +118,9 @@ func purgeCommand(args []string) (int, error) {
 		}
 		return 2, err
 	}
+	if fs.NArg() != 0 {
+		return 2, errors.New("purge does not accept positional arguments")
+	}
 	if !*flags.raw && !*flags.runDirs {
 		return 2, errors.New("purge requires --raw or --runs")
 	}
