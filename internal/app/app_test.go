@@ -85,6 +85,18 @@ func TestPurgeUnknownFlagDoesNotWriteToStdout(t *testing.T) {
 	}
 }
 
+func TestPurgeRejectsUnexpectedArgumentsBeforeRepositoryLookup(t *testing.T) {
+	chdir(t, t.TempDir())
+
+	code, err := Run([]string{"purge", "--raw", "unexpected"}, "test")
+	if code != 2 {
+		t.Fatalf("unexpected purge argument should be invalid usage: got %d (%v)", code, err)
+	}
+	if err == nil || err.Error() != "purge does not accept positional arguments" {
+		t.Fatalf("unexpected purge argument should return a purge-specific error: %v", err)
+	}
+}
+
 // The exit codes are a documented public contract that CI systems branch on:
 // 2 is invalid usage or configuration, 3 is an internal or adapter failure.
 // Collapsing a missing repository or a missing configuration into 3 tells a
