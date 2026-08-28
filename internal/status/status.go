@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ralabarta/agentproof/internal/config"
+	"github.com/ralabarta/agentproof/internal/purge"
 )
 
 // State summarises the AgentProof state for a project root.
@@ -37,18 +38,13 @@ func Read(root string) (State, error) {
 			continue
 		}
 		s.RunCount++
-		stateFile := filepath.Join(runsDir, e.Name(), "state.json")
-		if data, err := os.ReadFile(stateFile); err == nil {
-			var rs struct {
-				Status string `json:"status"`
-			}
-			if json.Unmarshal(data, &rs) == nil {
-				switch rs.Status {
-				case "abandoned":
-					s.AbandonedRuns++
-				case "recording":
-					s.RecordingRuns++
-				}
+		runDir := filepath.Join(runsDir, e.Name())
+		if runStatus, err := purge.ReadStateStatus(runDir); err == nil {
+			switch runStatus {
+			case "abandoned":
+				s.AbandonedRuns++
+			case "recording":
+				s.RecordingRuns++
 			}
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,62 @@ func TestReadStatus(t *testing.T) {
 	}
 	if s.RecordingRuns != 1 {
 		t.Fatalf("expected RecordingRuns=1, got %d", s.RecordingRuns)
+	}
+}
+
+func TestReadIgnoresUnsafeLifecycleStateFiles(t *testing.T) {
+	tests := []struct {
+		name       string
+		writeState func(t *testing.T, root, runDir string)
+	}{
+		{
+			name: "symlinked state file",
+			writeState: func(t *testing.T, root, runDir string) {
+				t.Helper()
+				target := filepath.Join(root, "state-target.json")
+				if err := os.WriteFile(target, []byte(`{"status":"abandoned"}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(runDir, "state.json")); err != nil {
+					t.Skipf("os.Symlink unavailable: %v", err)
+				}
+			},
+		},
+		{
+			name: "state file beyond size limit",
+			writeState: func(t *testing.T, _, runDir string) {
+				t.Helper()
+				data := []byte(`{"status":"recording","padding":"` + strings.Repeat("x", 64<<10) + `"}`)
+				if err := os.WriteFile(filepath.Join(runDir, "state.json"), data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := initializedDir(t)
+			runDir := filepath.Join(root, ".agentproof", "runs", "run-unsafe-state")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			tt.writeState(t, root, runDir)
+
+			s, err := status.Read(root)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if s.RunCount != 1 {
+				t.Fatalf("expected RunCount=1, got %d", s.RunCount)
+			}
+			if s.AbandonedRuns != 0 {
+				t.Fatalf("expected AbandonedRuns=0, got %d", s.AbandonedRuns)
+			}
+			if s.RecordingRuns != 0 {
+				t.Fatalf("expected RecordingRuns=0, got %d", s.RecordingRuns)
+			}
+		})
 	}
 }
 

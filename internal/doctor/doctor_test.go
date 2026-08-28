@@ -104,7 +104,7 @@ func TestDoctor_WarnsOnStuckRecordingRuns(t *testing.T) {
 	}
 }
 
-func TestDoctorRejectsSymlinkedLiveRecordingState(t *testing.T) {
+func TestDoctorIgnoresSymlinkedRecordingState(t *testing.T) {
 	dir := initialized(t)
 	runDir := filepath.Join(dir, ".agentproof", "runs", "active-recording")
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
@@ -124,8 +124,8 @@ func TestDoctorRejectsSymlinkedLiveRecordingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasFinding(report, "stuck-recording-runs", doctor.SeverityWarn) {
-		t.Fatal("symlinked state must not be trusted as the matching live recording run")
+	if hasFinding(report, "stuck-recording-runs", doctor.SeverityWarn) {
+		t.Fatal("symlinked state must not be classified as a stuck recording run")
 	}
 }
 
