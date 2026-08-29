@@ -80,6 +80,24 @@ func TestReadReturnsConfigStatError(t *testing.T) {
 	}
 }
 
+func TestReadReturnsRunsReadError(t *testing.T) {
+	dir := t.TempDir()
+	apDir := filepath.Join(dir, ".agentproof")
+	if err := os.MkdirAll(apDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "config.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "runs"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := status.Read(dir); err == nil {
+		t.Fatal("expected error for invalid runs layout")
+	}
+}
+
 func TestReadIgnoresUnsafeLifecycleStateFiles(t *testing.T) {
 	tests := []struct {
 		name       string

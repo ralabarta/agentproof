@@ -35,7 +35,10 @@ func Read(root string) (State, error) {
 	s.Initialized = true
 
 	runsDir := filepath.Join(root, config.DirName, "runs")
-	entries, _ := os.ReadDir(runsDir)
+	entries, err := os.ReadDir(runsDir)
+	if err != nil && !os.IsNotExist(err) {
+		return s, err
+	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
