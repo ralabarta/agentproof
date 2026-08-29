@@ -69,6 +69,17 @@ func TestReadStatus(t *testing.T) {
 	}
 }
 
+func TestReadReturnsConfigStatError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".agentproof"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := status.Read(dir); err == nil {
+		t.Fatal("expected error for invalid .agentproof layout")
+	}
+}
+
 func TestReadIgnoresUnsafeLifecycleStateFiles(t *testing.T) {
 	tests := []struct {
 		name       string

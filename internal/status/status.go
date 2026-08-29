@@ -27,7 +27,10 @@ func Read(root string) (State, error) {
 	var s State
 	cfgPath := filepath.Join(root, config.DirName, "config.json")
 	if _, err := os.Stat(cfgPath); err != nil {
-		return s, nil // not initialised
+		if os.IsNotExist(err) {
+			return s, nil
+		}
+		return s, err
 	}
 	s.Initialized = true
 
