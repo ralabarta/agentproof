@@ -10,7 +10,10 @@ import (
 	"github.com/ralabarta/agentproof/internal/safefile"
 )
 
-const DirName = ".agentproof"
+const (
+	DirName         = ".agentproof"
+	schemaVersionV1 = "agentproof.config/v1"
+)
 
 type Config struct {
 	SchemaVersion string   `json:"schema_version"`
@@ -23,7 +26,7 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		SchemaVersion: "agentproof.config/v1",
+		SchemaVersion: schemaVersionV1,
 		DefaultAgent:  "auto",
 		TestResults:   []string{},
 		RequireTests:  false,
@@ -61,6 +64,9 @@ func Load(root string) (Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return Config{}, err
+	}
+	if cfg.SchemaVersion != schemaVersionV1 {
+		return Config{}, fmt.Errorf("invalid schema_version %q: must be %q", cfg.SchemaVersion, schemaVersionV1)
 	}
 	switch cfg.FailOn {
 	case "critical", "high", "medium", "low", "none":
