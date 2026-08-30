@@ -162,6 +162,9 @@ func initCommand(args []string) (int, error) {
 	if err := fs.Parse(args); err != nil {
 		return 2, err
 	}
+	if fs.NArg() != 0 {
+		return 2, errors.New("init does not accept positional arguments")
+	}
 	cwd, _ := os.Getwd()
 	root, err := gitx.Root(cwd)
 	if err != nil {
@@ -216,6 +219,9 @@ func verifyCommand(args []string) (int, error) {
 	failOn := fs.String("fail-on", "", "CI threshold: critical, high, medium, low, or none")
 	if err := fs.Parse(args); err != nil {
 		return 2, err
+	}
+	if fs.NArg() != 0 {
+		return 2, errors.New("verify does not accept positional arguments")
 	}
 	if *failOn != "" && !validThreshold(*failOn) {
 		return 2, errors.New("--fail-on must be critical, high, medium, low, or none")

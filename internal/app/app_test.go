@@ -97,6 +97,27 @@ func TestPurgeRejectsUnexpectedArgumentsBeforeRepositoryLookup(t *testing.T) {
 	}
 }
 
+func TestInitAndVerifyRejectUnexpectedArgumentsBeforeRepositoryLookup(t *testing.T) {
+	for _, command := range []string{"init", "verify"} {
+		t.Run(command, func(t *testing.T) {
+			root := t.TempDir()
+			chdir(t, root)
+
+			code, err := Run([]string{command, "unexpected"}, "test")
+			if code != 2 {
+				t.Fatalf("unexpected %s argument should be invalid usage: got %d (%v)", command, code, err)
+			}
+			wantErr := command + " does not accept positional arguments"
+			if err == nil || err.Error() != wantErr {
+				t.Fatalf("unexpected %s argument should return a command-specific error: %v", command, err)
+			}
+			if _, statErr := os.Stat(filepath.Join(root, ".agentproof")); !os.IsNotExist(statErr) {
+				t.Fatalf("unexpected %s argument changed filesystem state: %v", command, statErr)
+			}
+		})
+	}
+}
+
 // The exit codes are a documented public contract that CI systems branch on:
 // 2 is invalid usage or configuration, 3 is an internal or adapter failure.
 // Collapsing a missing repository or a missing configuration into 3 tells a
