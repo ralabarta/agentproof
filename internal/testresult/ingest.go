@@ -211,6 +211,11 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 		if count > maxRecords {
 			return errors.New("JUnit XML exceeds element limit")
 		}
+		if count == 1 {
+			if start.Name.Local != "testsuite" && start.Name.Local != "testsuites" {
+				return errors.New("XML is not a JUnit test suite")
+			}
+		}
 		if start.Name.Local == "testsuite" {
 			suiteSeen = true
 		}

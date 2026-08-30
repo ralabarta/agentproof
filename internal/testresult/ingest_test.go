@@ -61,6 +61,46 @@ func TestIngestJUnitFailure(t *testing.T) {
 	}
 }
 
+func TestIngestJUnitRequiresJUnitRoot(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      string
+		wantObserved bool
+		wantPassed   bool
+		wantReason   string
+	}{
+		{name: "testsuite root", content: `<testsuite><testcase name="ok"/></testsuite>`, wantObserved: true, wantPassed: true},
+		{name: "testsuites root", content: `<testsuites><testsuite><testcase name="ok"/></testsuite></testsuites>`, wantObserved: true, wantPassed: true},
+		{name: "non-JUnit wrapper", content: `<report><testsuite><testcase name="nested"/></testsuite></report>`, wantReason: "XML is not a JUnit test suite"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "junit.xml"), tt.content)
+
+			result, records := Ingest(root, []string{"junit.xml"}, true)
+
+			if got := records[0].State == evidence.Observed; got != tt.wantObserved {
+				t.Fatalf("observed = %v, want %v: %#v", got, tt.wantObserved, records[0])
+			}
+			if result.Passed != tt.wantPassed {
+				t.Fatalf("passed = %v, want %v: %#v", result.Passed, tt.wantPassed, result)
+			}
+			if records[0].Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", records[0].Reason, tt.wantReason)
+			}
+			wantPassedTests := 0
+			if tt.wantObserved {
+				wantPassedTests = 1
+			}
+			if result.PassedTests != wantPassedTests {
+				t.Fatalf("passed tests = %d, want %d: %#v", result.PassedTests, wantPassedTests, result)
+			}
+		})
+	}
+}
+
 func TestIngestJUnitRequiresTestCase(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "junit.xml"), `<testsuite/>`)
