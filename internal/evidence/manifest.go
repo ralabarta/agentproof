@@ -258,6 +258,7 @@ func validDigest(value string) bool {
 }
 
 func normalizeStrings(values []string) []string {
+	values = slices.Clone(values)
 	sort.Strings(values)
 	result := make([]string, 0, len(values))
 	for _, value := range values {

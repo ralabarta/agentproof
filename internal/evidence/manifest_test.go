@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -98,6 +99,44 @@ func TestCompletenessCountsDiscoveredAndRequiredOnce(t *testing.T) {
 	got := manifest.Completeness()
 	if got.Observed != 1 || got.Required != 2 || got.Percent != 50 || got.Complete {
 		t.Fatalf("unexpected completeness: %#v", got)
+	}
+}
+
+func TestManifestCanonicalizationDoesNotMutateConfidenceReasons(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(Manifest) error
+	}{
+		{name: "canonical bytes", run: func(manifest Manifest) error {
+			_, err := manifest.CanonicalBytes()
+			return err
+		}},
+		{name: "identity", run: func(manifest Manifest) error {
+			_, err := manifest.Identity()
+			return err
+		}},
+		{name: "final bytes", run: func(manifest Manifest) error {
+			_, err := manifest.FinalBytes()
+			return err
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reasons := []string{"z", "a", "a"}
+			want := slices.Clone(reasons)
+			manifest := NewManifest([]Record{{
+				Locator: "logs/result.json", State: Observed, Digest: digest("c"),
+				Confidence: Confidence{Score: 90, Reasons: reasons},
+			}})
+
+			if err := tt.run(manifest); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(reasons, want) {
+				t.Fatalf("confidence reasons mutated: got %q, want %q", reasons, want)
+			}
+		})
 	}
 }
 
