@@ -134,6 +134,7 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	states := map[string]string{}
 	count := 0
 	eventSeen := false
+	terminalSeen := false
 	packageFailed := false
 	for scanner.Scan() {
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
@@ -156,6 +157,9 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 		case "start", "run", "pause", "cont", "pass", "bench", "fail", "output", "skip":
 			eventSeen = true
 		}
+		if event.Action == "pass" || event.Action == "fail" || event.Action == "skip" || event.Action == "bench" {
+			terminalSeen = true
+		}
 		if event.Test == "" {
 			if event.Action == "fail" {
 				packageFailed = true
@@ -173,6 +177,9 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	}
 	if !eventSeen {
 		return errors.New("test result contains no events")
+	}
+	if !terminalSeen {
+		return errors.New("test result contains no terminal outcome")
 	}
 	for _, state := range states {
 		switch state {

@@ -29,7 +29,7 @@ func TestIngestGoTestJSONRequiresRecognizedEvent(t *testing.T) {
 		wantReason   string
 	}{
 		{name: "unrecognized JSON", content: "{}\n", wantReason: "test result contains no events"},
-		{name: "package-level event", content: "{\"Action\":\"start\",\"Package\":\"example\"}\n", wantObserved: true, wantPassed: true},
+		{name: "incomplete package stream", content: "{\"Action\":\"start\",\"Package\":\"example\"}\n", wantReason: "test result contains no terminal outcome"},
 	}
 
 	for _, tt := range tests {
