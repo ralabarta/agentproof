@@ -131,7 +131,11 @@ func ingestOne(root, declared string, remaining int64) (evidence.TestArtifact, i
 func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	scanner := bufio.NewScanner(bytes.NewReader(b))
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	states := map[string]string{}
+	type terminalKey struct {
+		packageName string
+		testName    string
+	}
+	terminalActions := map[terminalKey]string{}
 	count := 0
 	eventSeen := false
 	terminalSeen := false
@@ -159,6 +163,11 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 		}
 		if event.Action == "pass" || event.Action == "fail" || event.Action == "skip" || event.Action == "bench" {
 			terminalSeen = true
+			key := terminalKey{packageName: event.Package, testName: event.Test}
+			if state, ok := terminalActions[key]; ok && state != event.Action {
+				return errors.New("Go test2json contains contradictory terminal outcomes")
+			}
+			terminalActions[key] = event.Action
 		}
 		if event.Test == "" {
 			if event.Action == "fail" {
@@ -168,7 +177,6 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 		}
 		switch event.Action {
 		case "pass", "fail", "skip":
-			states[event.Package+"\x00"+event.Test] = event.Action
 			artifact.DurationMS += int64(event.Elapsed * 1000)
 		}
 	}
@@ -181,7 +189,10 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 	if !terminalSeen {
 		return errors.New("test result contains no terminal outcome")
 	}
-	for _, state := range states {
+	for key, state := range terminalActions {
+		if key.testName == "" {
+			continue
+		}
 		switch state {
 		case "pass":
 			artifact.PassedTests++

@@ -20,6 +20,117 @@ func TestIngestGoTestJSON(t *testing.T) {
 	}
 }
 
+func TestIngestGoTestJSONHandlesRepeatedTerminalOutcomes(t *testing.T) {
+	const contradictory = "Go test2json contains contradictory terminal outcomes"
+	tests := []struct {
+		name         string
+		content      string
+		wantObserved bool
+		wantPassed   bool
+		wantPassedN  int
+		wantFailedN  int
+		wantSkippedN int
+		wantDuration int64
+		wantReason   string
+	}{
+		{
+			name:       "fail then pass for the same test",
+			content:    "{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n",
+			wantReason: contradictory,
+		},
+		{
+			name:       "pass then fail for the same test",
+			content:    "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n",
+			wantReason: contradictory,
+		},
+		{
+			name:       "skip then pass for the same test",
+			content:    "{\"Action\":\"skip\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n",
+			wantReason: contradictory,
+		},
+		{
+			name:       "bench then fail for the same benchmark",
+			content:    "{\"Action\":\"bench\",\"Package\":\"example\",\"Test\":\"BenchmarkOne\"}\n{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"BenchmarkOne\"}\n",
+			wantReason: contradictory,
+		},
+		{
+			name:       "package pass then package fail",
+			content:    "{\"Action\":\"pass\",\"Package\":\"example\"}\n{\"Action\":\"fail\",\"Package\":\"example\"}\n",
+			wantReason: contradictory,
+		},
+		{
+			name:         "repeated test pass is accepted and counted once",
+			content:      "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.01}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.02}\n",
+			wantObserved: true,
+			wantPassed:   true,
+			wantPassedN:  1,
+			wantDuration: 30,
+		},
+		{
+			name:         "repeated test fail is accepted and counted once",
+			content:      "{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n",
+			wantObserved: true,
+			wantFailedN:  1,
+		},
+		{
+			name:         "repeated test skip is accepted and counted once",
+			content:      "{\"Action\":\"skip\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n{\"Action\":\"skip\",\"Package\":\"example\",\"Test\":\"TestOne\"}\n",
+			wantObserved: true,
+			wantPassed:   true,
+			wantSkippedN: 1,
+		},
+		{
+			name:         "repeated bench is accepted without counting a test",
+			content:      "{\"Action\":\"bench\",\"Package\":\"example\",\"Test\":\"BenchmarkOne\",\"Elapsed\":0.01}\n{\"Action\":\"bench\",\"Package\":\"example\",\"Test\":\"BenchmarkOne\",\"Elapsed\":0.02}\n",
+			wantObserved: true,
+			wantPassed:   true,
+		},
+		{
+			name:         "repeated package pass is accepted without counting a test",
+			content:      "{\"Action\":\"pass\",\"Package\":\"example\"}\n{\"Action\":\"pass\",\"Package\":\"example\"}\n",
+			wantObserved: true,
+			wantPassed:   true,
+		},
+		{
+			name:         "repeated package skip is accepted without counting a test",
+			content:      "{\"Action\":\"skip\",\"Package\":\"example\"}\n{\"Action\":\"skip\",\"Package\":\"example\"}\n",
+			wantObserved: true,
+			wantPassed:   true,
+		},
+		{
+			name:         "repeated package fail is accepted and still fails the result",
+			content:      "{\"Action\":\"fail\",\"Package\":\"example\"}\n{\"Action\":\"fail\",\"Package\":\"example\"}\n",
+			wantObserved: true,
+			wantFailedN:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "test.jsonl"), tt.content)
+
+			result, records := Ingest(root, []string{"test.jsonl"}, true)
+
+			if got := records[0].State == evidence.Observed; got != tt.wantObserved {
+				t.Fatalf("observed = %v, want %v: %#v", got, tt.wantObserved, records[0])
+			}
+			if result.Passed != tt.wantPassed {
+				t.Fatalf("passed = %v, want %v: %#v", result.Passed, tt.wantPassed, result)
+			}
+			if result.PassedTests != tt.wantPassedN || result.FailedTests != tt.wantFailedN || result.SkippedTests != tt.wantSkippedN {
+				t.Fatalf("counts = (%d passed, %d failed, %d skipped), want (%d, %d, %d): %#v", result.PassedTests, result.FailedTests, result.SkippedTests, tt.wantPassedN, tt.wantFailedN, tt.wantSkippedN, result)
+			}
+			if result.DurationMS != tt.wantDuration {
+				t.Fatalf("duration = %dms, want %dms: %#v", result.DurationMS, tt.wantDuration, result)
+			}
+			if records[0].Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", records[0].Reason, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestIngestGoTestJSONRequiresRecognizedEvent(t *testing.T) {
 	tests := []struct {
 		name         string
