@@ -164,6 +164,37 @@ func TestSARIFHandlesEmptyFindings(t *testing.T) {
 	}
 }
 
+func TestSARIFMapsInvocationOutcomes(t *testing.T) {
+	tests := []struct {
+		name                string
+		status              string
+		executionSuccessful bool
+		exitCode            int
+	}{
+		{name: "passed", status: "passed", executionSuccessful: true, exitCode: 0},
+		{name: "warning", status: "warning", executionSuccessful: true, exitCode: 0},
+		{name: "failed", status: "failed", executionSuccessful: false, exitCode: 1},
+		{name: "unsupported status fails closed", status: "unsupported", executionSuccessful: false, exitCode: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invocations := buildInvocations(evidence.Run{Status: tt.status})
+			if len(invocations) != 1 {
+				t.Fatalf("buildInvocations() returned %d invocations, want 1", len(invocations))
+			}
+
+			invocation := invocations[0]
+			if got := invocation.ExecutionSuccessful; got != tt.executionSuccessful {
+				t.Errorf("executionSuccessful = %t, want %t", got, tt.executionSuccessful)
+			}
+			if got := invocation.ExitCode; got != tt.exitCode {
+				t.Errorf("exitCode = %d, want %d", got, tt.exitCode)
+			}
+		})
+	}
+}
+
 func TestSARIFIncludesInvocationMetadata(t *testing.T) {
 	run := evidence.Run{
 		Status:     "failed",

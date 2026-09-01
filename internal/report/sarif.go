@@ -208,12 +208,10 @@ func buildResults(findings []evidence.Finding) []sarifResult {
 }
 
 func buildInvocations(run evidence.Run) []sarifInvocation {
-	successful := run.Status == "passed"
+	successful := run.Status == "passed" || run.Status == "warning"
 	exitCode := 0
-	if run.Status == "failed" {
+	if !successful {
 		exitCode = 1
-	} else if run.Status == "warning" {
-		exitCode = 0
 	}
 
 	var startTime, endTime string
