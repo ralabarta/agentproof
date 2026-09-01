@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ralabarta/agentproof/internal/evidence"
 )
@@ -205,6 +206,35 @@ func TestSARIFIncludesInvocationMetadata(t *testing.T) {
 
 	if inv.Properties.Model != "gpt-5" {
 		t.Errorf("Expected model gpt-5, got %s", inv.Properties.Model)
+	}
+}
+
+func TestSARIFUsesRecordedInvocationTimes(t *testing.T) {
+	startedAt := time.Date(2026, time.September, 1, 12, 34, 56, 0, time.FixedZone("UTC-4", -4*60*60))
+	finishedAt := startedAt.Add(10 * time.Second)
+	run := evidence.Run{
+		Status:     "passed",
+		StartedAt:  startedAt,
+		FinishedAt: finishedAt,
+		DurationMS: 10000,
+	}
+
+	data, err := SARIF(run)
+	if err != nil {
+		t.Fatalf("SARIF generation failed: %v", err)
+	}
+
+	var parsed sarifReport
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Invalid JSON: %v", err)
+	}
+
+	invocation := parsed.Runs[0].Invocations[0]
+	if got, want := invocation.StartTimeUTC, "2026-09-01T16:34:56Z"; got != want {
+		t.Errorf("startTimeUtc = %q, want recorded start %q", got, want)
+	}
+	if got, want := invocation.EndTimeUTC, "2026-09-01T16:35:06Z"; got != want {
+		t.Errorf("endTimeUtc = %q, want recorded finish %q", got, want)
 	}
 }
 

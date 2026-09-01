@@ -217,10 +217,11 @@ func buildInvocations(run evidence.Run) []sarifInvocation {
 	}
 
 	var startTime, endTime string
-	if run.DurationMS > 0 {
-		now := time.Now().UTC()
-		endTime = now.Format(time.RFC3339)
-		startTime = now.Add(-time.Duration(run.DurationMS) * time.Millisecond).Format(time.RFC3339)
+	if !run.StartedAt.IsZero() {
+		startTime = run.StartedAt.UTC().Format(time.RFC3339)
+	}
+	if !run.FinishedAt.IsZero() {
+		endTime = run.FinishedAt.UTC().Format(time.RFC3339)
 	}
 
 	return []sarifInvocation{{
