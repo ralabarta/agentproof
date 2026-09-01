@@ -2,6 +2,7 @@ package impact
 
 import (
 	"bufio"
+	"errors"
 	"go/parser"
 	"go/token"
 	"io"
@@ -98,6 +99,8 @@ type graphResult struct {
 	bytesParsed   int64
 	limitReached  string
 }
+
+var errSourceTooLarge = errors.New("source exceeds analysis limit")
 
 // buildGraph walks the repository once, indexing first-party source files, then
 // derives component edges from the imports of every supported language. Go uses
@@ -206,6 +209,10 @@ func buildGraph(root string) graphResult {
 			}
 		case kindWeb, kindPython:
 			content, readErr := readBounded(source.abs)
+			if errors.Is(readErr, errSourceTooLarge) {
+				result.unknown = append(result.unknown, "source exceeds "+strconv.Itoa(maxSourceFileBytes)+"-byte limit: "+source.rel)
+				continue
+			}
 			if readErr != nil {
 				result.unknown = append(result.unknown, "unreadable source: "+source.rel)
 				continue
@@ -242,17 +249,20 @@ func buildGraph(root string) graphResult {
 	return result
 }
 
-// readBounded reads at most maxSourceFileBytes so a generated or minified file
-// cannot exhaust memory. A truncated read only costs later edges, never safety.
+// readBounded reads at most one byte beyond maxSourceFileBytes so oversized
+// sources are rejected rather than partially analyzed.
 func readBounded(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxSourceFileBytes))
+	data, err := io.ReadAll(io.LimitReader(file, maxSourceFileBytes+1))
 	if err != nil {
 		return "", err
+	}
+	if len(data) > maxSourceFileBytes {
+		return "", errSourceTooLarge
 	}
 	return string(data), nil
 }
