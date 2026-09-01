@@ -77,6 +77,22 @@ func TestAnalyzeIgnoresExternalDependenciesAndVendorDirs(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReportsOversizedSourceAsUnknown(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "src", "auth", "token.ts"), "export const token = 1;\n")
+	write(t, filepath.Join(root, "src", "api", "route.ts"), strings.Repeat(" ", maxSourceFileBytes)+"\nimport '../auth/token';\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/token.ts"}})
+
+	if result.Complete {
+		t.Fatalf("expected oversized source to make analysis incomplete: %#v", result)
+	}
+	wantUnknown := []string{"source exceeds 2097152-byte limit: src/api/route.ts"}
+	if len(result.Unknown) != len(wantUnknown) || result.Unknown[0] != wantUnknown[0] {
+		t.Fatalf("expected unknown %#v, got %#v", wantUnknown, result.Unknown)
+	}
+}
+
 func TestAnalyzeWithoutGoSourcesReportsNoModuleUnknown(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "src", "app.py"), "VALUE = 1\n")
