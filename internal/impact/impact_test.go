@@ -93,6 +93,40 @@ func TestAnalyzeReportsOversizedSourceAsUnknown(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRejectsSupportedSourceSymlink(t *testing.T) {
+	root := t.TempDir()
+	tokenSource := "export const token = 1;\n"
+	write(t, filepath.Join(root, "src", "auth", "token.ts"), tokenSource)
+	target := filepath.Join(t.TempDir(), "route.ts")
+	write(t, target, "import '../auth/token';\n")
+	symlink := filepath.Join(root, "src", "api", "route.ts")
+	if err := os.MkdirAll(filepath.Dir(symlink), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, symlink); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/token.ts"}})
+
+	if result.Complete {
+		t.Fatalf("expected source symlink to make analysis incomplete: %#v", result)
+	}
+	wantUnknown := []string{"symlinked source: src/api/route.ts"}
+	if len(result.Unknown) != len(wantUnknown) || result.Unknown[0] != wantUnknown[0] {
+		t.Fatalf("expected unknown %#v, got %#v", wantUnknown, result.Unknown)
+	}
+	if result.FilesExamined != 1 {
+		t.Fatalf("source symlink must not count as examined: %#v", result)
+	}
+	if result.BytesParsed != int64(len(tokenSource)) {
+		t.Fatalf("source symlink must not count as parsed bytes: %#v", result)
+	}
+	if len(result.Edges) != 0 {
+		t.Fatalf("source symlink must not contribute dependency edges: %#v", result.Edges)
+	}
+}
+
 func TestAnalyzeWithoutGoSourcesReportsNoModuleUnknown(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "src", "app.py"), "VALUE = 1\n")
