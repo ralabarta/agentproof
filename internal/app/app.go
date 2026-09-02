@@ -155,11 +155,27 @@ func purgeCommand(args []string) (int, error) {
 	return 0, nil
 }
 
+func parseCommandFlags(fs *flag.FlagSet, args []string) (bool, error) {
+	var output bytes.Buffer
+	fs.SetOutput(&output)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			_, _ = io.Copy(os.Stdout, &output)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
 func initCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	force := fs.Bool("force", false, "replace existing configuration")
-	if err := fs.Parse(args); err != nil {
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
 		return 2, err
 	}
 	if fs.NArg() != 0 {
@@ -179,12 +195,15 @@ func initCommand(args []string) (int, error) {
 
 func recordCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("record", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	objective := fs.String("objective", "", "original objective given to the coding agent")
 	agent := fs.String("agent", "codex", "session adapter: codex, claude, or claude-code")
 	model := fs.String("model", "", "model identifier when known")
 	retainRaw := fs.Bool("retain-raw", false, "retain raw command output locally for this run")
-	if err := fs.Parse(args); err != nil {
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
 		return 2, err
 	}
 	switch strings.ToLower(*agent) {
@@ -211,13 +230,16 @@ func recordCommand(args []string) (int, error) {
 
 func verifyCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	base := fs.String("base", "", "Git baseline when no recorded session is available")
 	var testResults stringList
 	fs.Var(&testResults, "test-result", "repository-relative JUnit XML or Go test2json artifact; repeatable")
 	requireTests := fs.Bool("require-tests", false, "fail when no valid test evidence is supplied")
 	failOn := fs.String("fail-on", "", "CI threshold: critical, high, medium, low, or none")
-	if err := fs.Parse(args); err != nil {
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
 		return 2, err
 	}
 	if fs.NArg() != 0 {

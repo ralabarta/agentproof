@@ -70,6 +70,45 @@ func TestPurgeHelpPrintsOptionsAndSucceeds(t *testing.T) {
 	}
 }
 
+func TestCommandHelpPrintsOptionsAndSucceedsWithoutRepository(t *testing.T) {
+	tests := []struct {
+		command string
+		options []string
+	}{
+		{command: "init", options: []string{"-force"}},
+		{command: "record", options: []string{"-agent", "-model", "-objective", "-retain-raw"}},
+		{command: "verify", options: []string{"-base", "-fail-on", "-require-tests", "-test-result"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			root := t.TempDir()
+			chdir(t, root)
+
+			output := captureStdout(t, func() {
+				if code, err := Run([]string{tt.command, "--help"}, "test"); code != 0 || err != nil {
+					t.Fatalf("%s help should succeed: got %d (%v)", tt.command, code, err)
+				}
+			})
+			if !strings.Contains(output, "Usage of "+tt.command+":") {
+				t.Errorf("%s help does not print command usage:\n%s", tt.command, output)
+			}
+			for _, option := range tt.options {
+				if !strings.Contains(output, option) {
+					t.Errorf("%s help does not list %q:\n%s", tt.command, option, output)
+				}
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("%s help changed filesystem state: %v", tt.command, entries)
+			}
+		})
+	}
+}
+
 func TestPurgeUnknownFlagDoesNotWriteToStdout(t *testing.T) {
 	output := captureStdout(t, func() {
 		code, err := Run([]string{"purge", "--unknown"}, "test")
