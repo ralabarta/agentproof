@@ -35,6 +35,27 @@ func TestGenerateBash(t *testing.T) {
 	}
 }
 
+func TestGenerateBashSuggestsSubcommandOptionsAfterArguments(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not installed")
+	}
+
+	script := generate(t, "bash")
+	cmd := exec.Command("bash", "-c", script+`
+COMP_WORDS=(agentproof verify report.json --)
+COMP_CWORD=3
+_agentproof
+printf '%s\n' "${COMPREPLY[@]}"
+`)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run generated bash completion: %v: %s", err, output)
+	}
+	if !strings.Contains(string(output), "--base\n") {
+		t.Fatalf("bash completion must keep suggesting verify options after arguments, got %q", output)
+	}
+}
+
 func TestGenerateZsh(t *testing.T) {
 	out := generate(t, "zsh")
 	if !strings.HasPrefix(out, "#compdef agentproof\n") {
