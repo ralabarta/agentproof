@@ -139,15 +139,19 @@ func buildGraph(root string) graphResult {
 		if kind == kindOther {
 			return nil
 		}
-		result.filesExamined++
-		if result.filesExamined > 20_000 {
-			result.limitReached = "files:20000"
-			return fs.SkipAll
-		}
 		info, infoErr := d.Info()
 		if infoErr != nil {
 			result.unknown = append(result.unknown, "unreadable file metadata: "+rel)
 			return nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			result.unknown = append(result.unknown, "symlinked source: "+rel)
+			return nil
+		}
+		result.filesExamined++
+		if result.filesExamined > 20_000 {
+			result.limitReached = "files:20000"
+			return fs.SkipAll
 		}
 		result.bytesParsed += info.Size()
 		if result.bytesParsed > 512*1024*1024 {
