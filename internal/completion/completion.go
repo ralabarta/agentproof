@@ -36,14 +36,14 @@ var commands = []commandSpec{
 
 const bashTmpl = `# bash completion for agentproof
 _agentproof() {
-    local cur prev
+    local cur command
     cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    command="${COMP_WORDS[1]}"
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "{{range .}}{{.Name}} {{end}}" -- "${cur}") )
         return 0
     fi
-    case "${prev}" in
+    case "${command}" in
 {{range .}}        {{.Name}})
             COMPREPLY=( $(compgen -W "{{range .Args}}{{.}} {{end}}" -- "${cur}") )
             ;;
