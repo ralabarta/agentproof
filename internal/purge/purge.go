@@ -30,7 +30,9 @@ func Raw(root string, opts Options) Result {
 	cutoff := time.Now().Add(-opts.OlderThan)
 	_ = filepath.WalkDir(runs, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			result.Failed++
+			if !errors.Is(err, os.ErrNotExist) {
+				result.Failed++
+			}
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
