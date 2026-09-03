@@ -78,6 +78,10 @@ func TestCommandHelpPrintsOptionsAndSucceedsWithoutRepository(t *testing.T) {
 		{command: "init", options: []string{"-force"}},
 		{command: "record", options: []string{"-agent", "-model", "-objective", "-retain-raw"}},
 		{command: "verify", options: []string{"-base", "-fail-on", "-require-tests", "-test-result"}},
+		{command: "status"},
+		{command: "runs"},
+		{command: "doctor"},
+		{command: "completion"},
 	}
 
 	for _, tt := range tests {

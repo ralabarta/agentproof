@@ -55,7 +55,15 @@ func Run(args []string, version string) (int, error) {
 }
 
 func statusCommand(args []string) (int, error) {
-	if len(args) != 0 {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
+		return 2, err
+	}
+	if fs.NArg() != 0 {
 		return 2, errors.New("status does not accept arguments")
 	}
 	cwd, _ := os.Getwd()
@@ -335,7 +343,15 @@ becomes AgentProof's exit code.`)
 }
 
 func runsCommand(args []string) (int, error) {
-	if len(args) != 0 {
+	fs := flag.NewFlagSet("runs", flag.ContinueOnError)
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
+		return 2, err
+	}
+	if fs.NArg() != 0 {
 		return 2, errors.New("runs does not accept arguments")
 	}
 	cwd, err := os.Getwd()
@@ -358,12 +374,20 @@ func runsCommand(args []string) (int, error) {
 }
 
 func completionCommand(args []string) (int, error) {
-	if len(args) > 1 {
+	fs := flag.NewFlagSet("completion", flag.ContinueOnError)
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
+		return 2, err
+	}
+	if fs.NArg() > 1 {
 		return 2, errors.New("completion accepts at most one shell: bash, zsh, or fish")
 	}
 	shell := "bash"
-	if len(args) == 1 {
-		shell = args[0]
+	if fs.NArg() == 1 {
+		shell = fs.Arg(0)
 	}
 	if err := completion.Generate(shell, os.Stdout); err != nil {
 		return 2, err
@@ -372,7 +396,15 @@ func completionCommand(args []string) (int, error) {
 }
 
 func doctorCommand(args []string) (int, error) {
-	if len(args) != 0 {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	help, err := parseCommandFlags(fs, args)
+	if help {
+		return 0, nil
+	}
+	if err != nil {
+		return 2, err
+	}
+	if fs.NArg() != 0 {
 		return 2, errors.New("doctor does not accept arguments")
 	}
 	cwd, err := os.Getwd()
