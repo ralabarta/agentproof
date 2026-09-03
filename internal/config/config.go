@@ -37,12 +37,12 @@ func Default() Config {
 
 func Init(root string, force bool) error {
 	dir := filepath.Join(root, DirName)
-	if err := os.MkdirAll(filepath.Join(dir, "runs"), 0o700); err != nil {
-		return err
-	}
 	path := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(path); err == nil && !force {
 		return fmt.Errorf("%w: already initialized; use --force to replace the configuration", apperr.ErrUsage)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "runs"), 0o700); err != nil {
+		return err
 	}
 	b, err := json.MarshalIndent(Default(), "", "  ")
 	if err != nil {

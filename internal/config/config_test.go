@@ -1,12 +1,42 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ralabarta/agentproof/internal/apperr"
 )
+
+func TestInitExistingConfigDoesNotCreateFilesystemEntries(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, DirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte("existing config"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	before, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read config directory before Init(): %v", err)
+	}
+	if err := Init(root, false); !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("Init() error = %v, want %v", err, apperr.ErrUsage)
+	}
+	after, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read config directory after Init(): %v", err)
+	}
+	if fmt.Sprint(after) != fmt.Sprint(before) {
+		t.Fatalf("Init() directory entries = %v, want unchanged %v", after, before)
+	}
+}
 
 func TestLoadValidatesFailOn(t *testing.T) {
 	tests := []struct {
