@@ -47,6 +47,25 @@ func TestRawHonorsAge(t *testing.T) {
 	}
 }
 
+func TestRawTreatsMissingRunsDirectoryAsEmpty(t *testing.T) {
+	result := Raw(t.TempDir(), Options{})
+	if result != (Result{}) {
+		t.Fatalf("missing runs directory should be empty: %#v", result)
+	}
+}
+
+func TestRawCountsOtherWalkErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".agentproof"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Raw(root, Options{})
+	if result.Selected != 0 || result.Deleted != 0 || result.Failed != 1 {
+		t.Fatalf("non-not-exist walk error should be counted: %#v", result)
+	}
+}
+
 func writeRun(t *testing.T, root, name, status string) string {
 	t.Helper()
 	dir := filepath.Join(root, ".agentproof", "runs", name)
