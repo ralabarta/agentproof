@@ -117,8 +117,9 @@ func ListRuns(root string) ([]RunSummary, error) {
 			continue
 		}
 		rs := RunSummary{ID: e.Name()}
+		runDir := filepath.Join(runsDir, e.Name())
 		// record.go writes record.json with objective, agent, startedAt, status.
-		recordFile := filepath.Join(runsDir, e.Name(), "record.json")
+		recordFile := filepath.Join(runDir, "record.json")
 		if data, err := os.ReadFile(recordFile); err == nil {
 			var rec struct {
 				Objective string    `json:"objective"`
@@ -132,6 +133,9 @@ func ListRuns(root string) ([]RunSummary, error) {
 				rs.StartedAt = rec.StartedAt
 				rs.State = rec.Status
 			}
+		}
+		if runStatus, err := purge.ReadStateStatus(runDir); err == nil && runStatus != "" {
+			rs.State = runStatus
 		}
 		result = append(result, rs)
 	}
