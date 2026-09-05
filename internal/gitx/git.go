@@ -130,12 +130,7 @@ func detailedChanges(root, startHead, endHead string) ([]evidence.Change, []evid
 
 func mergeUntracked(root string, target map[string]evidence.Change) []string {
 	var uncaptured []string
-	status, _ := run(root, "status", "--porcelain=v1", "--untracked-files=all")
-	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
-		if !strings.HasPrefix(line, "??") || len(line) < 4 {
-			continue
-		}
-		path := strings.TrimSpace(line[3:])
+	for _, path := range untrackedPaths(root) {
 		change := evidence.Change{Path: path, Status: "untracked"}
 		if count, ok := lineCount(filepath.Join(root, path)); ok {
 			change.Added = count
@@ -146,6 +141,15 @@ func mergeUntracked(root string, target map[string]evidence.Change) []string {
 		target[path] = change
 	}
 	return uncaptured
+}
+
+func untrackedPaths(root string) []string {
+	out, _ := run(root, "ls-files", "--others", "--exclude-standard", "-z")
+	paths := strings.Split(out, "\x00")
+	if len(paths) > 0 && paths[len(paths)-1] == "" {
+		paths = paths[:len(paths)-1]
+	}
+	return paths
 }
 
 func sortedChanges(values map[string]evidence.Change) []evidence.Change {
@@ -290,12 +294,7 @@ func patch(root, startHead, endHead string) (string, error) {
 		}
 		result += working
 	}
-	status, _ := run(root, "status", "--porcelain=v1", "--untracked-files=all")
-	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
-		if !strings.HasPrefix(line, "??") || len(line) < 4 {
-			continue
-		}
-		path := strings.TrimSpace(line[3:])
+	for _, path := range untrackedPaths(root) {
 		if strings.HasPrefix(filepath.ToSlash(path), ".agentproof/") {
 			continue
 		}

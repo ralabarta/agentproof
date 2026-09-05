@@ -40,6 +40,38 @@ func TestCollectIncludesUntrackedText(t *testing.T) {
 	}
 }
 
+func TestCollectIncludesUntrackedUTF8Path(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "main")
+	git(t, root, "config", "user.email", "test@agentproof.dev")
+	git(t, root, "config", "user.name", "AgentProof Test")
+	writeFile(t, filepath.Join(root, "README.md"), "base\n")
+	git(t, root, "add", "README.md")
+	git(t, root, "commit", "-m", "base")
+	start, err := TakeSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "café.go"), "package example\n\nfunc Added() {}\n")
+	end, err := TakeSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, patch, err := Collect(root, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.Changes) != 1 || repo.Changes[0].Path != "café.go" || repo.Changes[0].Status != "untracked" || repo.Changes[0].Added != 3 {
+		t.Fatalf("unexpected changes: %#v", repo.Changes)
+	}
+	if len(repo.UncapturedPaths) != 0 {
+		t.Fatalf("UTF-8 text path was classified as uncaptured: %#v", repo.UncapturedPaths)
+	}
+	if !strings.Contains(patch, "func Added") {
+		t.Fatalf("UTF-8 path was not included in patch: %s", patch)
+	}
+}
+
 func TestCollectMarksUntrackedBinaryAsUncaptured(t *testing.T) {
 	root := t.TempDir()
 	git(t, root, "init", "-b", "main")
