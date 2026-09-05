@@ -366,6 +366,92 @@ func initializedDir(t *testing.T) string {
 	return dir
 }
 
+func TestListRunsUsesLifecycleState(t *testing.T) {
+	startedAt := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		recordStatus  string
+		stateData     string
+		wantState     string
+		wantObjective string
+		wantAgent     string
+	}{
+		{
+			name:      "lifecycle-only recording run",
+			stateData: `{"status":"recording"}`,
+			wantState: "recording",
+		},
+		{
+			name:          "lifecycle state overrides stale record status",
+			recordStatus:  "recorded",
+			stateData:     `{"status":"abandoned"}`,
+			wantState:     "abandoned",
+			wantObjective: "fix auth",
+			wantAgent:     "codex",
+		},
+		{
+			name:          "malformed lifecycle state falls back to record status",
+			recordStatus:  "recorded",
+			stateData:     `{not json`,
+			wantState:     "recorded",
+			wantObjective: "fix auth",
+			wantAgent:     "codex",
+		},
+		{
+			name:          "empty lifecycle status falls back to record status",
+			recordStatus:  "recorded",
+			stateData:     `{"status":""}`,
+			wantState:     "recorded",
+			wantObjective: "fix auth",
+			wantAgent:     "codex",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			runDir := filepath.Join(root, ".agentproof", "runs", "run-abc")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if tt.recordStatus != "" {
+				recordData, err := json.Marshal(map[string]interface{}{
+					"status":    tt.recordStatus,
+					"startedAt": startedAt,
+					"objective": tt.wantObjective,
+					"agent":     tt.wantAgent,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(runDir, "record.json"), recordData, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(runDir, "state.json"), []byte(tt.stateData), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			runs, err := status.ListRuns(root)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(runs) != 1 {
+				t.Fatalf("expected 1 run, got %d", len(runs))
+			}
+			if runs[0].State != tt.wantState {
+				t.Fatalf("expected state %q, got %q", tt.wantState, runs[0].State)
+			}
+			if runs[0].Objective != tt.wantObjective || runs[0].Agent != tt.wantAgent {
+				t.Fatalf("expected record metadata %q / %q, got %q / %q", tt.wantObjective, tt.wantAgent, runs[0].Objective, runs[0].Agent)
+			}
+			if tt.recordStatus != "" && !runs[0].StartedAt.Equal(startedAt) {
+				t.Fatalf("expected StartedAt %v, got %v", startedAt, runs[0].StartedAt)
+			}
+		})
+	}
+}
+
 func TestListRuns(t *testing.T) {
 	dir := t.TempDir()
 
