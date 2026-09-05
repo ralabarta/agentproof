@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -251,7 +252,18 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 			return errors.New("malformed JUnit testcase")
 		}
 		if seconds, parseErr := strconv.ParseFloat(testCase.Time, 64); parseErr == nil {
-			artifact.DurationMS += int64(seconds * 1000)
+			if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 {
+				return errors.New("invalid JUnit testcase duration")
+			}
+			milliseconds := seconds * 1000
+			if milliseconds >= float64(math.MaxInt64) {
+				return errors.New("invalid JUnit testcase duration")
+			}
+			durationMS := int64(milliseconds)
+			if artifact.DurationMS > math.MaxInt64-durationMS {
+				return errors.New("invalid JUnit testcase duration")
+			}
+			artifact.DurationMS += durationMS
 		}
 		switch {
 		case testCase.Failure != nil || testCase.Error != nil:
