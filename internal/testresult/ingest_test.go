@@ -172,6 +172,36 @@ func TestIngestJUnitFailure(t *testing.T) {
 	}
 }
 
+func TestIngestJUnitDurationValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		timeAttribute string
+		wantObserved  bool
+		wantDuration  int64
+	}{
+		{name: "NaN is rejected", timeAttribute: ` time="NaN"`},
+		{name: "positive infinity is rejected", timeAttribute: ` time="Inf"`},
+		{name: "negative infinity is rejected", timeAttribute: ` time="-Inf"`},
+		{name: "negative duration is rejected", timeAttribute: ` time="-1"`},
+		{name: "omitted duration is accepted", wantObserved: true},
+		{name: "ordinary duration is accepted", timeAttribute: ` time="1.25"`, wantObserved: true, wantDuration: 1250},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "junit.xml"), `<testsuite><testcase name="case"`+tt.timeAttribute+`/></testsuite>`)
+
+			result, records := Ingest(root, []string{"junit.xml"}, true)
+
+			gotObserved := records[0].State == evidence.Observed
+			if gotObserved != tt.wantObserved || result.DurationMS != tt.wantDuration {
+				t.Fatalf("observed = %v, duration = %dms; want observed = %v, duration = %dms: %#v", gotObserved, result.DurationMS, tt.wantObserved, tt.wantDuration, records[0])
+			}
+		})
+	}
+}
+
 func TestIngestJUnitRequiresJUnitRoot(t *testing.T) {
 	tests := []struct {
 		name         string
