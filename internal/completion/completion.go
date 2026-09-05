@@ -10,14 +10,18 @@ import (
 	"text/template"
 )
 
-// commandSpec describes one CLI command and the option words a shell should
-// suggest after it. Args are plain tokens — flags or positional values such as
-// the completion shell names — and Desc is only used by templates that can
-// display it (fish).
+// commandSpec describes one CLI command and its completion words. Args are
+// plain tokens, while FlagValues preserves finite option values in display order.
 type commandSpec struct {
-	Name string
-	Desc string
-	Args []string
+	Name       string
+	Desc       string
+	Args       []string
+	FlagValues []flagValues
+}
+
+type flagValues struct {
+	Flag   string
+	Values []string
 }
 
 // commands must stay aligned with the switch in internal/app.Run. The package
@@ -25,8 +29,12 @@ type commandSpec struct {
 // command without an entry here is caught, not silently omitted.
 var commands = []commandSpec{
 	{Name: "init", Desc: "Create a local-first AgentProof configuration", Args: []string{"--force"}},
-	{Name: "record", Desc: "Record an agent command and its Git change window", Args: []string{"--objective", "--agent", "--model", "--retain-raw"}},
-	{Name: "verify", Desc: "Ingest evidence and generate deterministic integrity reports", Args: []string{"--base", "--test-result", "--require-tests", "--fail-on"}},
+	{Name: "record", Desc: "Record an agent command and its Git change window", Args: []string{"--objective", "--agent", "--model", "--retain-raw"}, FlagValues: []flagValues{
+		{Flag: "agent", Values: []string{"codex", "claude", "claude-code"}},
+	}},
+	{Name: "verify", Desc: "Ingest evidence and generate deterministic integrity reports", Args: []string{"--base", "--test-result", "--require-tests", "--fail-on"}, FlagValues: []flagValues{
+		{Flag: "fail-on", Values: []string{"critical", "high", "medium", "low", "none"}},
+	}},
 	{Name: "purge", Desc: "Preview or delete opted-in raw command logs", Args: []string{"--raw", "--runs", "--older-than", "--confirm"}},
 	{Name: "runs", Desc: "List recorded runs"},
 	{Name: "status", Desc: "Show AgentProof state"},
@@ -36,8 +44,9 @@ var commands = []commandSpec{
 
 const bashTmpl = `# bash completion for agentproof
 _agentproof() {
-    local cur command
+    local cur prev command value
     cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
     command="${COMP_WORDS[1]}"
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "{{range .}}{{.Name}} {{end}}" -- "${cur}") )
@@ -45,6 +54,12 @@ _agentproof() {
     fi
     case "${command}" in
 {{range .}}        {{.Name}})
+            case "${prev}" in
+{{range .FlagValues}}                --{{.Flag}}) COMPREPLY=( $(compgen -W "{{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}" -- "${cur}") ); return 0 ;;
+{{end}}            esac
+            case "${cur}" in
+{{range .FlagValues}}                --{{.Flag}}=*) value="${cur#--{{.Flag}}=}"; COMPREPLY=( $(compgen -P "--{{.Flag}}=" -W "{{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}" -- "${value}") ); return 0 ;;
+{{end}}            esac
             COMPREPLY=( $(compgen -W "{{range .Args}}{{.}} {{end}}" -- "${cur}") )
             ;;
 {{end}}        *)
@@ -58,12 +73,20 @@ complete -F _agentproof agentproof
 
 const zshTmpl = `#compdef agentproof
 _agentproof() {
+    local cur="${words[CURRENT]}"
+    local prev="${words[CURRENT-1]}"
     if (( CURRENT == 2 )); then
         compadd -- {{range .}}{{.Name}} {{end}}
         return 0
     fi
     case "${words[2]}" in
 {{range .}}        {{.Name}})
+            case "${prev}" in
+{{range .FlagValues}}                --{{.Flag}}) compadd -- {{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}; return 0 ;;
+{{end}}            esac
+            case "${cur}" in
+{{range .FlagValues}}                --{{.Flag}}=*) compset -P '1 *='; compadd -P '--{{.Flag}}=' -- {{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}; return 0 ;;
+{{end}}            esac
             compadd -- {{range .Args}}{{.}} {{end}}
             ;;
 {{end}}    esac
@@ -74,7 +97,8 @@ compdef _agentproof agentproof
 
 const fishTmpl = `# fish completion for agentproof
 {{range .}}complete -c agentproof -n '__fish_use_subcommand' -a '{{.Name}}' -d '{{.Desc}}'
-{{end}}{{range .}}{{if .Args}}complete -c agentproof -n '__fish_seen_subcommand_from {{.Name}}' -a '{{range .Args}}{{.}} {{end}}'
+{{end}}{{range $command := .}}{{if .Args}}complete -c agentproof -n '__fish_seen_subcommand_from {{.Name}}' -a '{{range .Args}}{{.}} {{end}}'
+{{end}}{{range $command.FlagValues}}complete -c agentproof -n '__fish_seen_subcommand_from {{$command.Name}}' -l {{.Flag}} -r -f -a '{{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}'
 {{end}}{{end}}`
 
 // CommandOptions returns a copy of the completion options for name.
