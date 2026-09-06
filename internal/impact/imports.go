@@ -136,7 +136,7 @@ func webCandidate(files map[string]bool, base string) string {
 	}
 	for _, suffix := range []string{
 		".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".d.ts",
-		"/index.ts", "/index.tsx", "/index.js", "/index.jsx", "/index.mjs", "/index.cjs",
+		"/index.ts", "/index.tsx", "/index.mts", "/index.cts", "/index.js", "/index.jsx", "/index.mjs", "/index.cjs",
 	} {
 		if candidate := trimmed + suffix; files[candidate] {
 			return candidate

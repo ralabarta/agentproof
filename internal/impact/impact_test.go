@@ -50,6 +50,34 @@ func TestAnalyzeResolvesTypeScriptAliasAndIndexImports(t *testing.T) {
 	}
 }
 
+func TestAnalyzeResolvesTypeScriptModuleIndexImports(t *testing.T) {
+	tests := []struct {
+		name      string
+		extension string
+	}{
+		{name: "ES module", extension: ".mts"},
+		{name: "CommonJS module", extension: ".cts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			changed := "src/auth/index" + tt.extension
+			write(t, filepath.Join(root, filepath.FromSlash(changed)), "export const auth = 1;\n")
+			write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '../auth';\n")
+
+			result := Analyze(root, []evidence.Change{{Path: changed}})
+
+			if !contains(result.AffectedComponents, "src/api") {
+				t.Fatalf("expected src/api affected: %#v", result.AffectedComponents)
+			}
+			wantEdge := evidence.Edge{From: "src/api", To: "src/auth"}
+			if !containsEdge(result.Edges, wantEdge) {
+				t.Fatalf("expected dependency edge %#v: %#v", wantEdge, result.Edges)
+			}
+		})
+	}
+}
+
 func TestAnalyzeResolvesPythonImports(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "app", "auth", "__init__.py"), "")
@@ -163,6 +191,15 @@ func write(t *testing.T, path, content string) {
 func contains(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEdge(edges []evidence.Edge, target evidence.Edge) bool {
+	for _, edge := range edges {
+		if edge == target {
 			return true
 		}
 	}
