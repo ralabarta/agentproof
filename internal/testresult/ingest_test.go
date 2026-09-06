@@ -183,6 +183,7 @@ func TestIngestJUnitDurationValidation(t *testing.T) {
 		{name: "positive infinity is rejected", timeAttribute: ` time="Inf"`},
 		{name: "negative infinity is rejected", timeAttribute: ` time="-Inf"`},
 		{name: "negative duration is rejected", timeAttribute: ` time="-1"`},
+		{name: "nonnumeric duration is rejected", timeAttribute: ` time="not-a-number"`},
 		{name: "omitted duration is accepted", wantObserved: true},
 		{name: "ordinary duration is accepted", timeAttribute: ` time="1.25"`, wantObserved: true, wantDuration: 1250},
 	}
