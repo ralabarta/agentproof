@@ -131,6 +131,62 @@ func TestIngestGoTestJSONHandlesRepeatedTerminalOutcomes(t *testing.T) {
 	}
 }
 
+func TestIngestGoTestJSONDurationValidation(t *testing.T) {
+	const invalidDuration = "invalid Go test2json test duration"
+	tests := []struct {
+		name         string
+		content      string
+		wantObserved bool
+		wantDuration int64
+		wantReason   string
+	}{
+		{
+			name:       "negative pass duration is rejected",
+			content:    "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":-0.01}\n",
+			wantReason: invalidDuration,
+		},
+		{
+			name:       "negative fail duration is rejected",
+			content:    "{\"Action\":\"fail\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":-0.01}\n",
+			wantReason: invalidDuration,
+		},
+		{
+			name:       "negative skip duration is rejected",
+			content:    "{\"Action\":\"skip\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":-0.01}\n",
+			wantReason: invalidDuration,
+		},
+		{
+			name:         "negative package duration remains unconsumed",
+			content:      "{\"Action\":\"pass\",\"Package\":\"example\",\"Elapsed\":-1}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.01}\n",
+			wantObserved: true,
+			wantDuration: 10,
+		},
+		{
+			name:         "negative repeated contribution is rejected",
+			content:      "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.02}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":-0.01}\n",
+			wantDuration: 20,
+			wantReason:   invalidDuration,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "test.jsonl"), tt.content)
+
+			result, records := Ingest(root, []string{"test.jsonl"}, true)
+
+			gotObserved := records[0].State == evidence.Observed
+			if gotObserved != tt.wantObserved || result.DurationMS != tt.wantDuration {
+				t.Fatalf("observed = %v, duration = %dms; want observed = %v, duration = %dms: %#v", gotObserved, result.DurationMS, tt.wantObserved, tt.wantDuration, records[0])
+			}
+			if records[0].Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", records[0].Reason, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestIngestGoTestJSONRequiresRecognizedEvent(t *testing.T) {
 	tests := []struct {
 		name         string
