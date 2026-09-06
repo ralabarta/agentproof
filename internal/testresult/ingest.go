@@ -251,7 +251,11 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 		if err := decoder.DecodeElement(&testCase, &start); err != nil {
 			return errors.New("malformed JUnit testcase")
 		}
-		if seconds, parseErr := strconv.ParseFloat(testCase.Time, 64); parseErr == nil {
+		if testCase.Time != "" {
+			seconds, parseErr := strconv.ParseFloat(testCase.Time, 64)
+			if parseErr != nil {
+				return errors.New("invalid JUnit testcase duration")
+			}
 			if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 {
 				return errors.New("invalid JUnit testcase duration")
 			}
