@@ -167,6 +167,17 @@ func TestIngestGoTestJSONDurationValidation(t *testing.T) {
 			wantDuration: 20,
 			wantReason:   invalidDuration,
 		},
+		{
+			name:       "scaled duration overflow is rejected",
+			content:    "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":10000000000000000}\n",
+			wantReason: invalidDuration,
+		},
+		{
+			name:         "same artifact duration accumulation overflow is rejected",
+			content:      "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":5000000000000000}\n{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestTwo\",\"Elapsed\":5000000000000000}\n",
+			wantDuration: 5000000000000000000,
+			wantReason:   invalidDuration,
+		},
 	}
 
 	for _, tt := range tests {
@@ -182,6 +193,14 @@ func TestIngestGoTestJSONDurationValidation(t *testing.T) {
 			}
 			if records[0].Reason != tt.wantReason {
 				t.Fatalf("reason = %q, want %q", records[0].Reason, tt.wantReason)
+			}
+			if tt.wantReason != "" {
+				if records[0].State != evidence.Unknown {
+					t.Fatalf("state = %v, want %v: %#v", records[0].State, evidence.Unknown, records[0])
+				}
+				if result.Passed {
+					t.Fatalf("invalid duration yielded a passing result: %#v", result)
+				}
 			}
 		})
 	}

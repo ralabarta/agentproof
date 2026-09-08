@@ -178,10 +178,18 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 		}
 		switch event.Action {
 		case "pass", "fail", "skip":
-			if event.Elapsed < 0 {
+			if math.IsNaN(event.Elapsed) || math.IsInf(event.Elapsed, 0) || event.Elapsed < 0 {
 				return errors.New("invalid Go test2json test duration")
 			}
-			artifact.DurationMS += int64(event.Elapsed * 1000)
+			milliseconds := event.Elapsed * 1000
+			if milliseconds >= float64(math.MaxInt64) {
+				return errors.New("invalid Go test2json test duration")
+			}
+			durationMS := int64(milliseconds)
+			if artifact.DurationMS > math.MaxInt64-durationMS {
+				return errors.New("invalid Go test2json test duration")
+			}
+			artifact.DurationMS += durationMS
 		}
 	}
 	if err := scanner.Err(); err != nil {
