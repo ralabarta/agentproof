@@ -88,6 +88,25 @@ func TestSARIFGeneratesValidReport(t *testing.T) {
 	}
 }
 
+func TestSARIFOmitInvalidOriginalURIBaseIDs(t *testing.T) {
+	data, err := SARIF(evidence.Run{
+		Repository: evidence.Repository{StartHead: "abc123"},
+	})
+	if err != nil {
+		t.Fatalf("SARIF generation failed: %v", err)
+	}
+
+	var report struct {
+		Runs []map[string]json.RawMessage `json:"runs"`
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("Invalid JSON: %v", err)
+	}
+	if _, exists := report.Runs[0]["originalUriBaseIds"]; exists {
+		t.Error("generated run contains invalid originalUriBaseIds")
+	}
+}
+
 func TestSARIFMapsAllSeverityLevels(t *testing.T) {
 	tests := []struct {
 		severity string

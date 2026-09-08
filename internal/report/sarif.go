@@ -22,7 +22,6 @@ func SARIF(run evidence.Run) ([]byte, error) {
 		Invocations: buildInvocations(run),
 		Artifacts:   buildArtifacts(run.Repository.Changes),
 		ColumnKind:  "utf16CodeUnits",
-		OriginalURI: run.Repository.StartHead,
 	}
 
 	report := sarifReport{
@@ -46,7 +45,6 @@ type sarifRun struct {
 	Invocations []sarifInvocation `json:"invocations,omitempty"`
 	Artifacts   []sarifArtifact   `json:"artifacts,omitempty"`
 	ColumnKind  string            `json:"columnKind"`
-	OriginalURI string            `json:"originalUriBaseIds,omitempty"`
 }
 
 type sarifTool struct {
