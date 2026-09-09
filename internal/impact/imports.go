@@ -228,6 +228,7 @@ func loadWebAliases(root string) *webAliases {
 				if normalized == "" {
 					continue
 				}
+				normalized = path.Join(aliases.baseURL, normalized)
 				if strings.HasSuffix(from, "*") && strings.HasSuffix(target, "*") {
 					aliases.rules = append(aliases.rules, aliasRule{
 						from:     strings.TrimSuffix(from, "*"),
