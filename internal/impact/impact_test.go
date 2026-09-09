@@ -50,6 +50,21 @@ func TestAnalyzeResolvesTypeScriptAliasAndIndexImports(t *testing.T) {
 	}
 }
 
+func TestAnalyzeResolvesTypeScriptPathsRelativeToBaseURL(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "tsconfig.json"), `{
+  "compilerOptions": {"baseUrl": "src", "paths": {"@/*": ["*"]}}
+}`)
+	write(t, filepath.Join(root, "src", "auth", "index.ts"), "export const auth = 1;\n")
+	write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '@/auth';\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts"}})
+
+	if !contains(result.AffectedComponents, "src/api") {
+		t.Fatalf("expected src/api affected: %#v", result.AffectedComponents)
+	}
+}
+
 func TestAnalyzeResolvesTypeScriptModuleIndexImports(t *testing.T) {
 	tests := []struct {
 		name      string
