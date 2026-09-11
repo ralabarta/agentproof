@@ -206,6 +206,58 @@ func TestIngestGoTestJSONDurationValidation(t *testing.T) {
 	}
 }
 
+func TestIngestCrossArtifactDuration(t *testing.T) {
+	const large = int64(5000000000000000000)
+	const goResult = `{"Action":"pass","Package":"example","Test":"TestOne","Elapsed":5000000000000000}`
+	const junitResult = `<testsuite><testcase name="ok" time="5000000000000000"/></testsuite>`
+	tests := []struct {
+		name       string
+		first      string
+		second     string
+		secondMS   int64
+		wantTotal  int64
+		wantPassed bool
+	}{
+		{name: "Go overflow", first: goResult, second: goResult, secondMS: large, wantTotal: large},
+		{name: "JUnit overflow", first: junitResult, second: junitResult, secondMS: large, wantTotal: large},
+		{name: "mixed overflow", first: goResult, second: junitResult, secondMS: large, wantTotal: large},
+		{name: "large valid sum", first: goResult, second: `<testsuite><testcase time="4000000000000000"/></testsuite>`, secondMS: 4000000000000000000, wantTotal: 9000000000000000000, wantPassed: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "a.result"), tt.first)
+			write(t, filepath.Join(root, "b.result"), tt.second)
+			for _, path := range []string{"a.result", "b.result"} {
+				single, _ := Ingest(root, []string{path}, true)
+				if !single.Passed {
+					t.Fatalf("individual artifact must be valid: %#v", single)
+				}
+			}
+			result, records := Ingest(root, []string{"b.result", "a.result"}, true)
+			if result.Passed != tt.wantPassed || result.DurationMS != tt.wantTotal {
+				t.Errorf("passed = %v, duration = %d; want %v, %d", result.Passed, result.DurationMS, tt.wantPassed, tt.wantTotal)
+			}
+			if !result.Ingested || len(result.Artifacts) != 2 || len(records) != 2 || result.PassedTests != 2 {
+				t.Fatalf("lost artifact evidence: %#v %#v", result, records)
+			}
+			for i, wantMS := range []int64{large, tt.secondMS} {
+				artifact := result.Artifacts[i]
+				wantState, wantReason := evidence.Observed, ""
+				if i == 1 && !tt.wantPassed {
+					wantState, wantReason = evidence.Unknown, "aggregate test result duration exceeds int64 limit"
+				}
+				if artifact.DurationMS != wantMS || artifact.PassedTests != 1 || artifact.Digest == "" || artifact.State != wantState || artifact.Reason != wantReason {
+					t.Errorf("unexpected artifact: %#v", artifact)
+				}
+				if records[i].State != wantState || records[i].Reason != wantReason || !records[i].Required || !records[i].Discovered || records[i].Digest != artifact.Digest {
+					t.Errorf("unexpected record: %#v", records[i])
+				}
+			}
+		})
+	}
+}
+
 func TestIngestGoTestJSONRequiresRecognizedEvent(t *testing.T) {
 	tests := []struct {
 		name         string
