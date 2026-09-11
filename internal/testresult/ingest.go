@@ -46,11 +46,16 @@ func Ingest(root string, declared []string, requireTests bool) (evidence.TestRes
 	for _, declaredPath := range declared {
 		artifact, size := ingestOne(root, declaredPath, maxTotalBytes-totalBytes)
 		totalBytes += size
+		if result.DurationMS > math.MaxInt64-artifact.DurationMS {
+			artifact.State = evidence.Unknown
+			artifact.Reason = "aggregate test result duration exceeds int64 limit"
+		} else {
+			result.DurationMS += artifact.DurationMS
+		}
 		result.Artifacts = append(result.Artifacts, artifact)
 		result.PassedTests += artifact.PassedTests
 		result.FailedTests += artifact.FailedTests
 		result.SkippedTests += artifact.SkippedTests
-		result.DurationMS += artifact.DurationMS
 		if artifact.State != evidence.Observed || artifact.FailedTests > 0 {
 			result.Passed = false
 		}
