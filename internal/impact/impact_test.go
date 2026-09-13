@@ -104,6 +104,23 @@ func TestAnalyzeResolvesPythonImports(t *testing.T) {
 	}
 }
 
+func TestAnalyzeResolvesPythonRelativeFromImport(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "pkg", "helper.py"), "VALUE = 1\n")
+	write(t, filepath.Join(root, "pkg", "sub", "__init__.py"), "")
+	write(t, filepath.Join(root, "pkg", "sub", "main.py"), "from .. import helper\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "pkg/helper.py"}})
+
+	if !contains(result.AffectedComponents, "pkg/sub") {
+		t.Fatalf("expected pkg/sub affected: %#v", result.AffectedComponents)
+	}
+	wantEdge := evidence.Edge{From: "pkg/sub", To: "pkg"}
+	if !containsEdge(result.Edges, wantEdge) {
+		t.Fatalf("expected dependency edge %#v: %#v", wantEdge, result.Edges)
+	}
+}
+
 func TestAnalyzeIgnoresExternalDependenciesAndVendorDirs(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "src", "app.ts"), "import React from 'react';\nimport './local';\n")
