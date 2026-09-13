@@ -340,6 +340,8 @@ func TestIngestJUnitRequiresJUnitRoot(t *testing.T) {
 	}{
 		{name: "testsuite root", content: `<testsuite><testcase name="ok"/></testsuite>`, wantObserved: true, wantPassed: true},
 		{name: "testsuites root", content: `<testsuites><testsuite><testcase name="ok"/></testsuite></testsuites>`, wantObserved: true, wantPassed: true},
+		{name: "nested testsuites", content: `<testsuite><testsuite><testcase name="ok"/></testsuite></testsuite>`, wantObserved: true, wantPassed: true},
+		{name: "testcase outside testsuite", content: `<testsuites><testsuite></testsuite><testcase name="forged"/></testsuites>`, wantReason: "JUnit testcase is outside testsuite"},
 		{name: "non-JUnit wrapper", content: `<report><testsuite><testcase name="nested"/></testsuite></report>`, wantReason: "XML is not a JUnit test suite"},
 	}
 
