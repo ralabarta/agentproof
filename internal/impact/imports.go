@@ -26,7 +26,7 @@ var (
 	webBareImport = regexp.MustCompile(`(?m)^\s*(?:import|export)\s*['"]([^'"\n]+)['"]`)
 	webCallImport = regexp.MustCompile(`\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]`)
 	pythonImport  = regexp.MustCompile(`(?m)^[ \t]*import[ \t]+([^\n#;]+)`)
-	pythonFrom    = regexp.MustCompile(`(?m)^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import\b`)
+	pythonFrom    = regexp.MustCompile(`(?m)^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+([^\n#;]+)`)
 	jsoncTrailing = regexp.MustCompile(`,(\s*[}\]])`)
 )
 
@@ -85,6 +85,18 @@ func pythonSpecifiers(content string) []string {
 	}
 	for _, match := range pythonFrom.FindAllStringSubmatch(content, -1) {
 		specs = append(specs, match[1])
+		if strings.TrimLeft(match[1], ".") != "" {
+			continue
+		}
+		for _, part := range strings.Split(match[2], ",") {
+			part = strings.TrimSpace(part)
+			if index := strings.Index(part, " as "); index >= 0 {
+				part = strings.TrimSpace(part[:index])
+			}
+			if part != "" {
+				specs = append(specs, match[1]+part)
+			}
+		}
 	}
 	return specs
 }
