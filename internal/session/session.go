@@ -29,7 +29,11 @@ func Discover(adapter string, since time.Time) []string {
 	default:
 		return nil
 	}
-	var files []string
+	type discoveredFile struct {
+		path    string
+		modTime time.Time
+	}
+	var files []discoveredFile
 	for _, root := range roots {
 		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".jsonl") {
@@ -37,16 +41,26 @@ func Discover(adapter string, since time.Time) []string {
 			}
 			info, infoErr := d.Info()
 			if infoErr == nil && info.ModTime().After(since.Add(-2*time.Second)) {
-				files = append(files, path)
+				files = append(files, discoveredFile{path: path, modTime: info.ModTime()})
 			}
 			return nil
 		})
 	}
-	sort.Strings(files)
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].modTime.Equal(files[j].modTime) {
+			return files[i].path < files[j].path
+		}
+		return files[i].modTime.After(files[j].modTime)
+	})
 	if len(files) > 1000 {
 		files = files[:1000]
 	}
-	return files
+	paths := make([]string, len(files))
+	for i := range files {
+		paths[i] = files[i].path
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func Summarize(adapter, path string) (evidence.Session, error) {
