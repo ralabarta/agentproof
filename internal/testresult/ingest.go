@@ -228,6 +228,7 @@ func parseGoTestJSON(b []byte, artifact *evidence.TestArtifact) error {
 func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 	decoder := xml.NewDecoder(bytes.NewReader(b))
 	count := 0
+	suiteDepth := 0
 	suiteSeen := false
 	testCaseSeen := false
 	for {
@@ -237,6 +238,12 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 		}
 		if err != nil {
 			return errors.New("malformed JUnit XML")
+		}
+		if end, ok := token.(xml.EndElement); ok {
+			if end.Name.Local == "testsuite" {
+				suiteDepth--
+			}
+			continue
 		}
 		start, ok := token.(xml.StartElement)
 		if !ok {
@@ -252,10 +259,14 @@ func parseJUnit(b []byte, artifact *evidence.TestArtifact) error {
 			}
 		}
 		if start.Name.Local == "testsuite" {
+			suiteDepth++
 			suiteSeen = true
 		}
 		if start.Name.Local != "testcase" {
 			continue
+		}
+		if suiteDepth == 0 {
+			return errors.New("JUnit testcase is outside testsuite")
 		}
 		testCaseSeen = true
 		var testCase struct {
