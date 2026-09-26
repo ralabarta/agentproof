@@ -180,12 +180,17 @@ func CompareBase(root, base string) (evidence.Repository, string, error) {
 }
 
 func mergeNumstat(root string, byPath map[string]evidence.Change, args ...string) error {
+	// -z keeps paths raw: default git output octal-escapes non-ASCII names.
+	args = append(args, "-z")
 	out, err := run(root, args...)
 	if err != nil {
 		return err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		parts := strings.SplitN(line, "\t", 3)
+	for _, record := range strings.Split(out, "\x00") {
+		if record == "" {
+			continue
+		}
+		parts := strings.SplitN(record, "\t", 3)
 		if len(parts) != 3 {
 			continue
 		}
@@ -203,18 +208,21 @@ func mergeNumstat(root string, byPath map[string]evidence.Change, args ...string
 }
 
 func mergeNameStatus(root string, byPath map[string]evidence.Change, args ...string) error {
+	// -z keeps paths raw: default git output octal-escapes non-ASCII names.
+	args = append(args, "-z")
 	out, err := run(root, args...)
 	if err != nil {
 		return err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
+	records := strings.Split(out, "\x00")
+	for i := 0; i+1 < len(records); i += 2 {
+		status, path := records[i], records[i+1]
+		if status == "" || path == "" {
 			continue
 		}
-		change := byPath[parts[1]]
-		change.Path = parts[1]
-		switch strings.TrimSpace(parts[0]) {
+		change := byPath[path]
+		change.Path = path
+		switch strings.TrimSpace(status) {
 		case "A":
 			change.Status = "added"
 		case "D":
@@ -222,7 +230,7 @@ func mergeNameStatus(root string, byPath map[string]evidence.Change, args ...str
 		default:
 			change.Status = "modified"
 		}
-		byPath[parts[1]] = change
+		byPath[path] = change
 	}
 	return nil
 }
