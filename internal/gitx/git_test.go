@@ -72,6 +72,51 @@ func TestCollectIncludesUntrackedUTF8Path(t *testing.T) {
 	}
 }
 
+func TestCollectTracksUTF8PathForTrackedModification(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "main")
+	git(t, root, "config", "user.email", "test@agentproof.dev")
+	git(t, root, "config", "user.name", "AgentProof Test")
+	path := filepath.Join(root, "café.go")
+	writeFile(t, path, "package example\n\nfunc Base() {}\n")
+	git(t, root, "add", "café.go")
+	git(t, root, "commit", "-m", "base")
+	start, err := TakeSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, "package example\n\nfunc Base() {}\n\nfunc Added() {}\n")
+	end, err := TakeSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := Collect(root, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.WorkingChanges) != 1 || repo.WorkingChanges[0].Path != "café.go" {
+		t.Fatalf("tracked UTF-8 working path was quoted or missing: %#v", repo.WorkingChanges)
+	}
+	if len(repo.Changes) != 1 || repo.Changes[0].Path != "café.go" {
+		t.Fatalf("tracked UTF-8 combined path was quoted or missing: %#v", repo.Changes)
+	}
+
+	git(t, root, "add", "café.go")
+	git(t, root, "commit", "-m", "track utf-8 change")
+	committedStart := start
+	committedEnd, err := TakeSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, _, err := Collect(root, committedStart, committedEnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(committed.CommittedChanges) != 1 || committed.CommittedChanges[0].Path != "café.go" {
+		t.Fatalf("tracked UTF-8 committed path was quoted or missing: %#v", committed.CommittedChanges)
+	}
+}
+
 func TestCollectMarksUntrackedBinaryAsUncaptured(t *testing.T) {
 	root := t.TempDir()
 	git(t, root, "init", "-b", "main")
