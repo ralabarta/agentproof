@@ -109,6 +109,78 @@ func RedactString(value string) string {
 	return redacted
 }
 
+// gitAddedHeaderPath returns the repository path from an added-side unified
+// diff header line. Git C-quotes headers for non-ASCII and special-character
+// filenames (`+++ "b/caf\303\251.go"`), so the quoted form is decoded before
+// the `b/` prefix is stripped. Lines that are not an added-side file header,
+// including `+++ /dev/null`, report false so the caller keeps its previous
+// path.
+func gitAddedHeaderPath(line string) (string, bool) {
+	value := strings.TrimPrefix(line, "+++ ")
+	if value == line {
+		return "", false
+	}
+	if decoded, ok := unquoteGitPath(value); ok {
+		value = decoded
+	}
+	if !strings.HasPrefix(value, "b/") {
+		return "", false
+	}
+	return strings.TrimPrefix(value, "b/"), true
+}
+
+// unquoteGitPath decodes git's C-style quoted path. It reports false for a
+// value that is not a well-formed quoted string, leaving the caller to treat
+// the raw value as-is.
+func unquoteGitPath(value string) (string, bool) {
+	if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		return "", false
+	}
+	var out strings.Builder
+	body := value[1 : len(value)-1]
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c != '\\' {
+			out.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(body) {
+			return "", false
+		}
+		switch body[i] {
+		case '\\':
+			out.WriteByte('\\')
+		case '"':
+			out.WriteByte('"')
+		case 'n':
+			out.WriteByte('\n')
+		case 't':
+			out.WriteByte('\t')
+		case 'r':
+			out.WriteByte('\r')
+		case 'b':
+			out.WriteByte('\b')
+		case 'f':
+			out.WriteByte('\f')
+		case 'a':
+			out.WriteByte('\a')
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			val, digits := 0, 0
+			for digits < 3 && i < len(body) && body[i] >= '0' && body[i] <= '7' {
+				val = val*8 + int(body[i]-'0')
+				i++
+				digits++
+			}
+			i--
+			out.WriteByte(byte(val))
+		default:
+			return "", false
+		}
+	}
+	return out.String(), true
+}
+
 func scanPatch(patch string) []evidence.Finding {
 	var findings []evidence.Finding
 	scanner := bufio.NewScanner(strings.NewReader(patch))
@@ -119,8 +191,8 @@ func scanPatch(patch string) []evidence.Finding {
 	seen := map[string]bool{}
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "+++ b/") {
-			path = strings.TrimPrefix(line, "+++ b/")
+		if candidate, ok := gitAddedHeaderPath(line); ok {
+			path = candidate
 			continue
 		}
 		if match := hunk.FindStringSubmatch(line); len(match) == 2 {
