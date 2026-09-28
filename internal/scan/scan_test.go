@@ -28,6 +28,45 @@ func TestRunDetectsSecretWithoutCopyingValue(t *testing.T) {
 	}
 }
 
+// fakeGitHubToken builds a value that matches AP-SECRET-002 at runtime while
+// keeping the literal out of the source line, so this repository's own CI
+// verify gate does not flag the test fixture as a real secret.
+func fakeGitHubToken(seed string) string {
+	return "ghp_" + strings.Repeat(seed, 30)
+}
+
+func TestScanPatchAttributesQuotedUTF8Path(t *testing.T) {
+	patch := "+++ \"b/caf\\303\\251.go\"\n@@ -1,0 +2 @@\n+token " + fakeGitHubToken("a") + "\n"
+	findings := scanPatch(patch)
+	if len(findings) != 1 || findings[0].ID != "AP-SECRET-002" {
+		t.Fatalf("expected one GitHub token finding, got %#v", findings)
+	}
+	if findings[0].Path != "café.go" {
+		t.Fatalf("secret finding path misattributed: %#v", findings[0])
+	}
+	if findings[0].Line != 2 {
+		t.Fatalf("expected line 2, got %d", findings[0].Line)
+	}
+}
+
+func TestScanPatchKeepsQuotedPathsDistinct(t *testing.T) {
+	patch := "+++ \"b/caf\\303\\251.go\"\n@@ -1,0 +2 @@\n+token " + fakeGitHubToken("a") + "\n" +
+		"+++ \"b/ma\\303\\261ana.go\"\n@@ -1,0 +2 @@\n+token " + fakeGitHubToken("b") + "\n"
+	findings := scanPatch(patch)
+	paths := map[string]bool{}
+	for _, finding := range findings {
+		if finding.ID == "AP-SECRET-002" {
+			if finding.Path == "" {
+				t.Fatalf("finding has empty path: %#v", finding)
+			}
+			paths[finding.Path] = true
+		}
+	}
+	if len(paths) != 2 || !paths["café.go"] || !paths["mañana.go"] {
+		t.Fatalf("quoted findings were not attributed distinctly: %#v", findings)
+	}
+}
+
 func TestMeetsThreshold(t *testing.T) {
 	findings := []evidence.Finding{{Severity: "medium"}}
 	if MeetsThreshold(findings, "high") {
