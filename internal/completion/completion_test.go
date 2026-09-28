@@ -14,7 +14,67 @@ import (
 // commands mirrors the CLI surface wired in internal/app. Keeping the list in
 // sync is intentional: a new command must be added to both places, and this
 // test fails when a completion script stops mentioning one.
-var commands = []string{"init", "record", "verify", "purge", "runs", "status", "doctor", "completion"}
+var commands = []string{"init", "record", "verify", "purge", "runs", "status", "doctor", "completion", "help", "version"}
+
+func TestGenerateSuggestsTopLevelDashFlags(t *testing.T) {
+	scripts := map[string]string{
+		"bash": generate(t, "bash"),
+		"zsh":  generate(t, "zsh"),
+		"fish": generate(t, "fish"),
+	}
+	// bash and zsh spell the long flags literally; fish declares them with
+	// -l, so it is checked below in its own syntax.
+	for _, name := range []string{"bash", "zsh"} {
+		for _, flag := range []string{"--help", "--version"} {
+			if !strings.Contains(scripts[name], flag) {
+				t.Errorf("%s completion missing top-level flag %q", name, flag)
+			}
+		}
+		if !strings.Contains(scripts[name], "-h --help --version") {
+			t.Errorf("%s completion must offer -h alongside --help and --version", name)
+		}
+	}
+	if !strings.Contains(scripts["fish"], "-s h") || !strings.Contains(scripts["fish"], "-l help") {
+		t.Error("fish completion must offer -h/--help at command position")
+	}
+	if !strings.Contains(scripts["fish"], "-l version") {
+		t.Error("fish completion must offer --version at command position")
+	}
+}
+
+func TestGenerateBashCompletesTopLevelOperands(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not installed")
+	}
+	script := generate(t, "bash")
+	tests := []struct {
+		name  string
+		words string
+		want  []string
+	}{
+		{name: "dash flags", words: "COMP_WORDS=(agentproof -)\nCOMP_CWORD=1", want: []string{"--help\n", "--version\n", "-h\n"}},
+		{name: "long dash flags", words: "COMP_WORDS=(agentproof --)\nCOMP_CWORD=1", want: []string{"--help\n", "--version\n"}},
+		{name: "help command", words: "COMP_WORDS=(agentproof he)\nCOMP_CWORD=1", want: []string{"help\n"}},
+		{name: "version command", words: "COMP_WORDS=(agentproof vers)\nCOMP_CWORD=1", want: []string{"version\n"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", script+tt.words+`
+_agentproof
+printf '%s\n' "${COMPREPLY[@]}"
+`)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("run generated bash completion: %v: %s", err, output)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(string(output), want) {
+					t.Errorf("bash completion output missing %q, got %q", strings.TrimSpace(want), output)
+				}
+			}
+		})
+	}
+}
 
 func TestGenerateBash(t *testing.T) {
 	out := generate(t, "bash")

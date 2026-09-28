@@ -40,6 +40,8 @@ var commands = []commandSpec{
 	{Name: "status", Desc: "Show AgentProof state"},
 	{Name: "doctor", Desc: "Run diagnostic checks"},
 	{Name: "completion", Desc: "Generate a shell completion script", Args: []string{"bash", "zsh", "fish"}},
+	{Name: "help", Desc: "Show help for agentproof"},
+	{Name: "version", Desc: "Print the agentproof version"},
 }
 
 const bashTmpl = `# bash completion for agentproof
@@ -49,7 +51,11 @@ _agentproof() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     command="${COMP_WORDS[1]}"
     if [[ ${COMP_CWORD} -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "{{range .}}{{.Name}} {{end}}" -- "${cur}") )
+        if [[ "${cur}" == -* ]]; then
+            COMPREPLY=( $(compgen -W "-h --help --version" -- "${cur}") )
+        else
+            COMPREPLY=( $(compgen -W "{{range .}}{{.Name}} {{end}}" -- "${cur}") )
+        fi
         return 0
     fi
     case "${command}" in
@@ -76,7 +82,11 @@ _agentproof() {
     local cur="${words[CURRENT]}"
     local prev="${words[CURRENT-1]}"
     if (( CURRENT == 2 )); then
-        compadd -- {{range .}}{{.Name}} {{end}}
+        if [[ "${words[CURRENT]}" == -* ]]; then
+            compadd -- -h --help --version
+        else
+            compadd -- {{range .}}{{.Name}} {{end}}
+        fi
         return 0
     fi
     case "${words[2]}" in
@@ -97,7 +107,9 @@ compdef _agentproof agentproof
 
 const fishTmpl = `# fish completion for agentproof
 {{range .}}complete -c agentproof -n '__fish_use_subcommand' -a '{{.Name}}' -d '{{.Desc}}'
-{{end}}{{range $command := .}}{{if .Args}}complete -c agentproof -n '__fish_seen_subcommand_from {{.Name}}' -a '{{range .Args}}{{.}} {{end}}'
+{{end}}complete -c agentproof -n '__fish_use_subcommand' -s h -l help -d 'Show help for agentproof'
+complete -c agentproof -n '__fish_use_subcommand' -l version -d 'Print the agentproof version'
+{{range $command := .}}{{if .Args}}complete -c agentproof -n '__fish_seen_subcommand_from {{.Name}}' -a '{{range .Args}}{{.}} {{end}}'
 {{end}}{{range $command.FlagValues}}complete -c agentproof -n '__fish_seen_subcommand_from {{$command.Name}}' -l {{.Flag}} -r -f -a '{{range $index, $value := .Values}}{{if $index}} {{end}}{{$value}}{{end}}'
 {{end}}{{end}}`
 
