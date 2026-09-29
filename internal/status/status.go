@@ -97,7 +97,7 @@ type RunSummary struct {
 	Objective string
 	Agent     string
 	StartedAt time.Time
-	State     string // "recorded", "complete", "abandoned", or "recording"
+	State     string // "recorded", "complete", "abandoned", "recording", or "unknown"
 }
 
 // ListRuns returns a summary of every run directory under root. A missing runs
@@ -136,6 +136,13 @@ func ListRuns(root string) ([]RunSummary, error) {
 		}
 		if runStatus, err := purge.ReadStateStatus(runDir); err == nil && runStatus != "" {
 			rs.State = runStatus
+		}
+		if rs.State == "" {
+			// Neither the record nor the lifecycle state yielded a status —
+			// for example a run directory left behind when record's first
+			// state write failed. "unknown" matches evidence.Unknown so the
+			// runs table never prints a blank documented-state cell.
+			rs.State = "unknown"
 		}
 		result = append(result, rs)
 	}
