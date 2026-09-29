@@ -452,6 +452,29 @@ func TestListRunsUsesLifecycleState(t *testing.T) {
 	}
 }
 
+// TestListRunsReportsUnknownStateForStatelessRunDir guards the runs table
+// against a blank STATE cell: a run directory without record.json or a usable
+// state.json (for example left behind when record's first state write failed)
+// must still report the documented "unknown" state instead of "".
+func TestListRunsReportsUnknownStateForStatelessRunDir(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, ".agentproof", "runs", "run-orphan")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	runs, err := status.ListRuns(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(runs))
+	}
+	if runs[0].State != "unknown" {
+		t.Fatalf("stateless run must report state %q, got %q", "unknown", runs[0].State)
+	}
+}
+
 func TestListRuns(t *testing.T) {
 	dir := t.TempDir()
 
