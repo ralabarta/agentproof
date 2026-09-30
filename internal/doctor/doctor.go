@@ -62,7 +62,20 @@ func Run(cwd string) (Report, error) {
 		})
 	} else {
 		r.Findings = append(r.Findings, Finding{Name: "agentproof-init", Severity: SeverityOK})
-		// check 3: abandoned runs
+		// check 3: config.json must not only exist — record and verify both
+		// fail on any config.Load error, and they report it as "not
+		// initialized", so an existing-but-invalid config has to surface here
+		// instead of a green doctor.
+		if _, err := config.Load(cwd); err != nil {
+			r.Findings = append(r.Findings, Finding{
+				Name:     "agentproof-config",
+				Severity: SeverityError,
+				Detail:   fmt.Sprintf("configuration is invalid: %v; record and verify will fail until it is fixed", err),
+			})
+		} else {
+			r.Findings = append(r.Findings, Finding{Name: "agentproof-config", Severity: SeverityOK})
+		}
+		// check 4: abandoned runs
 		if s.AbandonedRuns > 0 {
 			r.Findings = append(r.Findings, Finding{
 				Name:     "abandoned-runs",
@@ -71,7 +84,7 @@ func Run(cwd string) (Report, error) {
 			})
 		}
 
-		// check 4: runs stuck in the recording state. A crash that bypasses
+		// check 5: runs stuck in the recording state. A crash that bypasses
 		// signal handling (SIGKILL, power loss, a panic) leaves state.json as
 		// "recording" forever, indistinguishable from a live run except that a
 		// live record still owns a live lock.
@@ -88,7 +101,7 @@ func Run(cwd string) (Report, error) {
 		}
 	}
 
-	// check 5: go toolchain
+	// check 6: go toolchain
 	if _, err := exec.LookPath("go"); err != nil {
 		r.Findings = append(r.Findings, Finding{
 			Name:     "go-toolchain",
