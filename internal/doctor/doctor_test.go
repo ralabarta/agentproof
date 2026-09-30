@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ralabarta/agentproof/internal/config"
 	"github.com/ralabarta/agentproof/internal/doctor"
 )
 
@@ -47,6 +48,64 @@ func TestDoctor_Initialized(t *testing.T) {
 		if f.Name == "agentproof-init" && f.Severity != doctor.SeverityOK {
 			t.Fatalf("expected agentproof-init ok for initialized dir, got %s", f.Severity)
 		}
+	}
+}
+
+// TestDoctor_InvalidConfigIsUnhealthy guards the diagnostic contract: a
+// config.json that exists but fails config.Load makes record and verify
+// unusable, so doctor must report an agentproof-config error and be unhealthy
+// instead of exiting green on mere file existence.
+func TestDoctor_InvalidConfigIsUnhealthy(t *testing.T) {
+	dir := t.TempDir()
+	apDir := filepath.Join(dir, ".agentproof")
+	if err := os.MkdirAll(apDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apDir, "config.json"), []byte(`{"schema_version":"broken"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := doctor.Run(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	finding, ok := findFinding(report, "agentproof-config", doctor.SeverityError)
+	if !ok {
+		t.Fatalf("expected an agentproof-config error finding, got %#v", report.Findings)
+	}
+	if !strings.Contains(finding.Detail, "invalid schema_version") {
+		t.Fatalf("config finding detail must carry the load error, got %q", finding.Detail)
+	}
+	if report.Healthy {
+		t.Fatal("an unloadable config must make doctor unhealthy")
+	}
+}
+
+func TestDoctor_ValidConfigReportsConfigOK(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.Init(dir, false); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := doctor.Run(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasFinding(report, "agentproof-config", doctor.SeverityOK) {
+		t.Fatalf("expected an agentproof-config ok finding, got %#v", report.Findings)
+	}
+	if !report.Healthy {
+		t.Fatal("a valid config must keep doctor healthy")
+	}
+}
+
+func TestDoctor_UninitializedOmitsConfigFinding(t *testing.T) {
+	report, err := doctor.Run(t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasFinding(report, "agentproof-config", doctor.SeverityError) {
+		t.Fatal("an uninitialized project must not report a config error")
 	}
 }
 
