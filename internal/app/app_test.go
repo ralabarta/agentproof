@@ -193,6 +193,53 @@ func TestNoArgumentCommandsRejectUnexpectedArguments(t *testing.T) {
 	}
 }
 
+// TestRecordAndVerifyReportInvalidConfig guards the operator-facing remedy:
+// an existing config.json that fails config.Load must be reported as an
+// invalid configuration carrying the real load error, never as
+// "not initialized" (which sends the operator to init, whose answer is
+// "already initialized").
+func TestRecordAndVerifyReportInvalidConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "record", args: []string{"record", "--objective", "x", "--", "true"}},
+		{name: "verify", args: []string{"verify"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := gitRepo(t)
+			chdir(t, root)
+			if code, err := Run([]string{"init"}, "test"); code != 0 {
+				t.Fatalf("init should succeed: got %d (%v)", code, err)
+			}
+			if err := os.WriteFile(
+				filepath.Join(root, ".agentproof", "config.json"),
+				[]byte(`{"schema_version":"broken"}`),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			code, err := Run(tt.args, "test")
+			if code != 2 {
+				t.Fatalf("code = %d, want 2 (fixable invocation)", code)
+			}
+			if err == nil {
+				t.Fatal("expected an error for an unloadable config")
+			}
+			if !strings.Contains(err.Error(), "configuration is invalid") ||
+				!strings.Contains(err.Error(), "invalid schema_version") {
+				t.Fatalf("err = %q, want invalid-config message with load detail", err)
+			}
+			if strings.Contains(err.Error(), "not initialized") {
+				t.Fatalf("invalid config must not be reported as not initialized: %q", err)
+			}
+		})
+	}
+}
+
 func TestVerifyWithoutInitIsUsageNotInternalFailure(t *testing.T) {
 	chdir(t, gitRepo(t))
 	if code, err := Run([]string{"verify"}, "test"); code != 2 {

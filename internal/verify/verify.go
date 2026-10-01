@@ -43,7 +43,10 @@ func Run(cwd string, opts Options) (Result, error) {
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
+		if errors.Is(err, config.ErrNotInitialized) {
+			return Result{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
+		}
+		return Result{}, fmt.Errorf("%w: AgentProof configuration is invalid: %v", apperr.ErrUsage, err)
 	}
 	if opts.FailOn == "" {
 		opts.FailOn = cfg.FailOn

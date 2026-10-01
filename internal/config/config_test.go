@@ -38,6 +38,19 @@ func TestInitExistingConfigDoesNotCreateFilesystemEntries(t *testing.T) {
 	}
 }
 
+// TestLoadMissingConfigReturnsNotInitializedSentinel guards the distinction
+// call sites rely on: a missing config.json is "not initialized" (fix: run
+// init), while a present-but-unloadable config is invalid (fix: repair the
+// file). Both must never collapse into one message.
+func TestLoadMissingConfigReturnsNotInitializedSentinel(t *testing.T) {
+	root := t.TempDir()
+
+	_, err := Load(root)
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("Load() error = %v, want errors.Is(err, ErrNotInitialized)", err)
+	}
+}
+
 func TestLoadValidatesFailOn(t *testing.T) {
 	tests := []struct {
 		name    string
