@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,13 @@ import (
 	"github.com/ralabarta/agentproof/internal/apperr"
 	"github.com/ralabarta/agentproof/internal/safefile"
 )
+
+// ErrNotInitialized marks the Load failure caused by a missing config.json.
+// Call sites use errors.Is to separate "run agentproof init" (file absent)
+// from "repair the existing configuration" (file present but unloadable);
+// collapsing both into one message sends operators to init, which then
+// answers "already initialized".
+var ErrNotInitialized = errors.New("configuration file not found")
 
 const (
 	DirName         = ".agentproof"
@@ -59,6 +67,9 @@ func Init(root string, force bool) error {
 func Load(root string) (Config, error) {
 	b, err := os.ReadFile(filepath.Join(root, DirName, "config.json"))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return Config{}, fmt.Errorf("%w: %w", ErrNotInitialized, err)
+		}
 		return Config{}, err
 	}
 	var cfg Config

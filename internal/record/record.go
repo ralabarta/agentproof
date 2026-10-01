@@ -46,7 +46,10 @@ func Run(cwd string, opts Options) (evidence.Run, error) {
 		return evidence.Run{}, err
 	}
 	if _, err := config.Load(root); err != nil {
-		return evidence.Run{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
+		if errors.Is(err, config.ErrNotInitialized) {
+			return evidence.Run{}, fmt.Errorf("%w: AgentProof is not initialized; run agentproof init", apperr.ErrUsage)
+		}
+		return evidence.Run{}, fmt.Errorf("%w: AgentProof configuration is invalid: %v", apperr.ErrUsage, err)
 	}
 	started := time.Now().UTC()
 	runID := started.Format("20060102T150405.000000000Z")
