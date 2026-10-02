@@ -210,29 +210,61 @@ type webAliases struct {
 	rules   []aliasRule
 }
 
-// loadWebAliases reads tsconfig.json or jsconfig.json path mappings. Unreadable
-// or unparsable configuration yields no aliases rather than an error: alias
-// support is best-effort and its absence only means fewer resolved edges.
+type aliasConfig struct {
+	Extends        json.RawMessage `json:"extends"`
+	CompilerOptions struct {
+		BaseURL string              `json:"baseUrl"`
+		Paths   map[string][]string `json:"paths"`
+	} `json:"compilerOptions"`
+}
+
+// Bounds for the relative extends walk. Best-effort alias support only means
+// fewer resolved edges when exceeded, never an error.
+const (
+	maxExtendsDepth = 16
+	maxExtendsFiles = 8
+)
+
+// loadWebAliases reads tsconfig.json or jsconfig.json path mappings, walking
+// relative "extends" chains (base configs first, the extending config
+// overriding). Unreadable or unparsable configuration yields no aliases
+// rather than an error: alias support is best-effort and its absence only
+// means fewer resolved edges. Package extends targets are skipped.
 func loadWebAliases(root string) *webAliases {
-	aliases := &webAliases{}
 	for _, name := range []string{"tsconfig.json", "jsconfig.json"} {
-		data, err := os.ReadFile(filepath.Join(root, name))
+		if aliases := loadAliasesFor(root, name); aliases != nil {
+			return aliases
+		}
+	}
+	return &webAliases{}
+}
+
+// loadAliasesFor returns nil when the root config itself is missing or
+// unparsable, so the caller can fall through to the next candidate file
+// (matching the pre-extends behavior). A parsable root returns aliases even
+// when individual extends links had to be skipped.
+func loadAliasesFor(root, name string) *webAliases {
+	chain := extendsChain(root, name)
+	if chain == nil {
+		return nil
+	}
+	aliases := &webAliases{}
+	// chain is root-first; apply deepest base first so each extending config
+	// overrides what it inherits.
+	for i := len(chain) - 1; i >= 0; i-- {
+		rel := chain[i]
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil || len(data) > maxSourceFileBytes {
 			continue
 		}
-		var config struct {
-			CompilerOptions struct {
-				BaseURL string              `json:"baseUrl"`
-				Paths   map[string][]string `json:"paths"`
-			} `json:"compilerOptions"`
+		config, ok := parseAliasConfig(data)
+		if !ok {
+			continue
 		}
-		if json.Unmarshal(data, &config) != nil {
-			if json.Unmarshal(stripJSONC(data), &config) != nil {
-				continue
-			}
-		}
+		dir := path.Dir(rel)
 		if base := normalizeRel(config.CompilerOptions.BaseURL); base != "" {
-			aliases.baseURL = base
+			// baseUrl is relative to the config file that declares it.
+			aliases.baseURL = path.Join(dir, base)
 		}
 		for from, targets := range config.CompilerOptions.Paths {
 			for _, target := range targets {
@@ -240,7 +272,11 @@ func loadWebAliases(root string) *webAliases {
 				if normalized == "" {
 					continue
 				}
-				normalized = path.Join(aliases.baseURL, normalized)
+				if aliases.baseURL != "" {
+					normalized = path.Join(aliases.baseURL, normalized)
+				} else {
+					normalized = path.Join(dir, normalized)
+				}
 				if strings.HasSuffix(from, "*") && strings.HasSuffix(target, "*") {
 					aliases.rules = append(aliases.rules, aliasRule{
 						from:     strings.TrimSuffix(from, "*"),
@@ -252,7 +288,6 @@ func loadWebAliases(root string) *webAliases {
 				aliases.rules = append(aliases.rules, aliasRule{from: from, to: normalized})
 			}
 		}
-		break
 	}
 	sort.Slice(aliases.rules, func(i, j int) bool {
 		if len(aliases.rules[i].from) != len(aliases.rules[j].from) {
@@ -261,6 +296,85 @@ func loadWebAliases(root string) *webAliases {
 		return aliases.rules[i].from < aliases.rules[j].from
 	})
 	return aliases
+}
+
+// extendsChain returns the root-relative config files to merge, root first
+// (apply in reverse so bases land first), or nil when the root file cannot be
+// read or parsed. Relative parents are followed with a visited-set cycle
+// guard, a depth cap, and a file-count cap; package targets and reads outside
+// the root are skipped.
+func extendsChain(root, name string) []string {
+	seen := map[string]bool{}
+	var order []string
+	var visit func(current string, depth int) bool
+	visit = func(current string, depth int) bool {
+		cleaned := path.Clean(current)
+		if strings.HasPrefix(cleaned, "..") || path.IsAbs(cleaned) {
+			return depth > 0
+		}
+		if seen[cleaned] || depth > maxExtendsDepth || len(seen) >= maxExtendsFiles {
+			return true
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(cleaned)))
+		if err != nil || len(data) > maxSourceFileBytes {
+			return depth > 0
+		}
+		config, ok := parseAliasConfig(data)
+		if !ok {
+			return depth > 0
+		}
+		seen[cleaned] = true
+		order = append(order, cleaned)
+		for _, parent := range extendsTargets(config.Extends) {
+			visit(path.Join(path.Dir(cleaned), parent), depth+1)
+		}
+		return true
+	}
+	if !visit(name, 0) {
+		return nil
+	}
+	return order
+}
+
+// extendsTargets returns relative parent config paths. An array of extends is
+// visited last-entry-first so that, after the reverse apply order, later
+// entries override earlier ones the way TypeScript does.
+func extendsTargets(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var single string
+	if json.Unmarshal(raw, &single) == nil {
+		return relativeExtends(single)
+	}
+	var many []string
+	if json.Unmarshal(raw, &many) == nil {
+		var out []string
+		for index := len(many) - 1; index >= 0; index-- {
+			out = append(out, relativeExtends(many[index])...)
+		}
+		return out
+	}
+	return nil
+}
+
+func relativeExtends(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" || (!strings.HasPrefix(value, "./") && !strings.HasPrefix(value, "../")) {
+		return nil
+	}
+	return []string{value}
+}
+
+func parseAliasConfig(data []byte) (aliasConfig, bool) {
+	var config aliasConfig
+	if json.Unmarshal(data, &config) == nil {
+		return config, true
+	}
+	if json.Unmarshal(stripJSONC(data), &config) == nil {
+		return config, true
+	}
+	return config, false
 }
 
 func normalizeRel(value string) string {
