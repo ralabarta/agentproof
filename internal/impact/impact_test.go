@@ -65,6 +65,92 @@ func TestAnalyzeResolvesTypeScriptPathsRelativeToBaseURL(t *testing.T) {
 	}
 }
 
+// TestAnalyzeResolvesAliasThroughExtendsChain guards the monorepo pattern:
+// compilerOptions live in a base config that the root extends. Before the
+// extends walk, the alias import was silently dropped as an external npm
+// dependency — empty edges, empty unknown/unsupported, Complete=true.
+func TestAnalyzeResolvesAliasThroughExtendsChain(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "tsconfig.json"), `{"extends": "./tsconfig.base.json"}`)
+	write(t, filepath.Join(root, "tsconfig.base.json"), `{"compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["./src/*"]}}}`)
+	write(t, filepath.Join(root, "src", "auth", "index.ts"), "export const auth = 1;\n")
+	write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '@/auth';\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts"}})
+
+	if !contains(result.AffectedComponents, "src/api") {
+		t.Fatalf("expected extends-chain alias resolved to src/api: %#v (edges=%#v unknown=%#v unsupported=%#v)",
+			result.AffectedComponents, result.Edges, result.Unknown, result.Unsupported)
+	}
+}
+
+// TestAnalyzeExtendsChildPathsOverrideBase checks merge order: the extending
+// config's own compilerOptions.paths must win over the inherited mapping.
+func TestAnalyzeExtendsChildPathsOverrideBase(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "tsconfig.json"),
+		`{"extends": "./tsconfig.base.json", "compilerOptions": {"paths": {"@/*": ["./src/*"]}}}`)
+	write(t, filepath.Join(root, "tsconfig.base.json"), `{"compilerOptions": {"paths": {"@/*": ["./wrong/*"]}}}`)
+	write(t, filepath.Join(root, "src", "auth", "index.ts"), "export const auth = 1;\n")
+	write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '@/auth';\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts"}})
+
+	if !contains(result.AffectedComponents, "src/api") {
+		t.Fatalf("child paths must override inherited base mapping: %#v", result.AffectedComponents)
+	}
+}
+
+// TestAnalyzeExtendsMultiLevelInheritance walks root -> mid -> base and must
+// inherit compilerOptions declared several levels up.
+func TestAnalyzeExtendsMultiLevelInheritance(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "tsconfig.json"), `{"extends": "./mid.json"}`)
+	write(t, filepath.Join(root, "mid.json"), `{"extends": "./base.json"}`)
+	write(t, filepath.Join(root, "base.json"), `{"compilerOptions": {"baseUrl": ".", "paths": {"#lib/*": ["./lib/*"]}}}`)
+	write(t, filepath.Join(root, "lib", "util.ts"), "export const util = 1;\n")
+	write(t, filepath.Join(root, "src", "api", "route.ts"), "import { util } from '#lib/util';\n")
+
+	result := Analyze(root, []evidence.Change{{Path: "lib/util.ts"}})
+
+	if !contains(result.AffectedComponents, "src/api") {
+		t.Fatalf("multi-level extends must inherit paths: %#v", result.AffectedComponents)
+	}
+}
+
+// TestAnalyzeExtendsCycleTerminatesAndBareTargetsSkipped bounds the walk:
+// a relative extends cycle must not hang or abort resolution, and package
+// extends targets are skipped best-effort while local compilerOptions still
+// apply.
+func TestAnalyzeExtendsCycleTerminatesAndBareTargetsSkipped(t *testing.T) {
+	t.Run("cycle", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, filepath.Join(root, "tsconfig.json"), `{"extends": "./a.json", "compilerOptions": {"paths": {"@/*": ["./src/*"]}}}`)
+		write(t, filepath.Join(root, "a.json"), `{"extends": "./tsconfig.json"}`)
+		write(t, filepath.Join(root, "src", "auth", "index.ts"), "export const auth = 1;\n")
+		write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '@/auth';\n")
+
+		result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts"}})
+
+		if !contains(result.AffectedComponents, "src/api") {
+			t.Fatalf("cycle must terminate and local paths still resolve: %#v", result.AffectedComponents)
+		}
+	})
+
+	t.Run("bare package extends skipped", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, filepath.Join(root, "tsconfig.json"), `{"extends": "@tsconfig/strictest/tsconfig.json", "compilerOptions": {"paths": {"@/*": ["./src/*"]}}}`)
+		write(t, filepath.Join(root, "src", "auth", "index.ts"), "export const auth = 1;\n")
+		write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '@/auth';\n")
+
+		result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts"}})
+
+		if !contains(result.AffectedComponents, "src/api") {
+			t.Fatalf("bare extends must be skipped without dropping local paths: %#v", result.AffectedComponents)
+		}
+	})
+}
+
 func TestAnalyzeResolvesTypeScriptModuleIndexImports(t *testing.T) {
 	tests := []struct {
 		name      string
