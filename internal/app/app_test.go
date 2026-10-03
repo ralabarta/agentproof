@@ -198,6 +198,26 @@ func TestNoArgumentCommandsRejectUnexpectedArguments(t *testing.T) {
 // invalid configuration carrying the real load error, never as
 // "not initialized" (which sends the operator to init, whose answer is
 // "already initialized").
+// TestInitRejectsSymlinkedAgentProofDir asserts the operator-facing contract:
+// init on a symlinked .agentproof exits as a fixable usage error naming the
+// symlink, never as a silent success that wrote outside the repository.
+func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".agentproof")); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+
+	code, err := Run([]string{"init"}, "test")
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (fixable invocation)", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("err = %v, want a message naming the symlink", err)
+	}
+}
+
 func TestRecordAndVerifyReportInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name string

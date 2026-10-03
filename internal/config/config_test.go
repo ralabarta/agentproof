@@ -11,6 +11,30 @@ import (
 	"github.com/ralabarta/agentproof/internal/apperr"
 )
 
+// TestInitRejectsSymlinkedMetadataDirectory guards the record/init
+// consistency boundary: record refuses a symlinked .agentproof, so init must
+// refuse it too — before creating or writing anything — instead of writing
+// config outside the repository and reporting success.
+func TestInitRejectsSymlinkedMetadataDirectory(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, DirName)); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+
+	err := Init(root, false)
+	if !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("Init() error = %v, want ErrUsage", err)
+	}
+	entries, readErr := os.ReadDir(outside)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("init must not write through a symlinked metadata dir; outside = %#v", entries)
+	}
+}
+
 func TestInitExistingConfigDoesNotCreateFilesystemEntries(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, DirName)
