@@ -35,6 +35,36 @@ func TestInitRejectsSymlinkedMetadataDirectory(t *testing.T) {
 	}
 }
 
+// TestInitRejectsNonDirectoryMetadataPath guards the exit-code contract: a
+// stray file at .agentproof is a fixable invocation, so Init must return
+// ErrUsage (exit 2) with a clear message instead of surfacing MkdirAll's raw
+// ENOTDIR as an internal failure (exit 3). The stray file must be untouched.
+func TestInitRejectsNonDirectoryMetadataPath(t *testing.T) {
+	root := t.TempDir()
+	stray := filepath.Join(root, DirName)
+	if err := os.WriteFile(stray, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Init(root, false)
+	if !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("Init() error = %v, want ErrUsage", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("Init() error = %v, want a message naming the condition", err)
+	}
+	contents, readErr := os.ReadFile(stray)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(contents) != "not a directory" {
+		t.Fatalf("stray file must be untouched, got %q", contents)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, DirName, "config.json")); statErr == nil {
+		t.Fatal("init must not create a config through a non-directory metadata path")
+	}
+}
+
 func TestInitExistingConfigDoesNotCreateFilesystemEntries(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, DirName)

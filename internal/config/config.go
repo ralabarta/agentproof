@@ -48,8 +48,15 @@ func Init(root string, force bool) error {
 	// record refuses a symlinked metadata root (validateRecordRoot); init must
 	// refuse it first, before the exists/--force logic, or MkdirAll and the
 	// config writes go through the symlink and land outside the repository.
-	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: %s is a symlink; remove it and re-run agentproof init", apperr.ErrUsage, DirName)
+	// A non-directory path is the same fixable-invocation class: surfacing
+	// MkdirAll's raw ENOTDIR would report it as an internal failure (exit 3).
+	if info, err := os.Lstat(dir); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s is a symlink; remove it and re-run agentproof init", apperr.ErrUsage, DirName)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%w: %s exists and is not a directory; remove it and re-run agentproof init", apperr.ErrUsage, DirName)
+		}
 	}
 	path := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(path); err == nil && !force {
