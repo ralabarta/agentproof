@@ -201,6 +201,25 @@ func TestNoArgumentCommandsRejectUnexpectedArguments(t *testing.T) {
 // TestInitRejectsSymlinkedAgentProofDir asserts the operator-facing contract:
 // init on a symlinked .agentproof exits as a fixable usage error naming the
 // symlink, never as a silent success that wrote outside the repository.
+// TestInitReportsNonDirectoryMetadataAsUsage asserts the documented exit-code
+// contract: a fixable invocation (stray .agentproof file) exits 2 with a
+// clear message, never 3 as an internal failure.
+func TestInitReportsNonDirectoryMetadataAsUsage(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".agentproof"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, err := Run([]string{"init"}, "test")
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (fixable invocation)", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("err = %v, want a message naming the condition", err)
+	}
+}
+
 func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
 	root := gitRepo(t)
 	chdir(t, root)
