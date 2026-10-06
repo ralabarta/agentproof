@@ -165,6 +165,13 @@ func sortedChanges(values map[string]evidence.Change) []evidence.Change {
 }
 
 func CompareBase(root, base string) (evidence.Repository, string, error) {
+	// A typo'd --base is a fixable invocation: validate the ref up front with
+	// locale-independent rev-parse instead of letting a raw git diff error
+	// surface as an internal failure. Do not insert "--" before the value —
+	// `rev-parse --verify --quiet -- HEAD^{commit}` fails even for known refs.
+	if _, err := run(root, "rev-parse", "--verify", "--quiet", base+"^{commit}"); err != nil {
+		return evidence.Repository{}, "", fmt.Errorf("%w: invalid --base %q: not a known commit, tag, or branch", apperr.ErrUsage, base)
+	}
 	end, err := TakeSnapshot(root)
 	if err != nil {
 		return evidence.Repository{}, "", err

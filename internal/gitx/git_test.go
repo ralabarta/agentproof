@@ -1,12 +1,36 @@
 package gitx
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ralabarta/agentproof/internal/apperr"
 )
+
+// TestCompareBaseRejectsUnknownRef guards the exit-code contract: a typo'd
+// --base is a fixable invocation, so CompareBase must classify it as usage
+// (exit 2 via verify) instead of letting raw git stderr surface as an
+// internal failure. A valid ref must keep behaving exactly as before.
+func TestCompareBaseRejectsUnknownRef(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "main")
+	git(t, root, "config", "user.email", "test@agentproof.dev")
+	git(t, root, "config", "user.name", "AgentProof Test")
+	writeFile(t, filepath.Join(root, "README.md"), "base\n")
+	git(t, root, "add", "README.md")
+	git(t, root, "commit", "-m", "base")
+
+	if _, _, err := CompareBase(root, "nonexistent-ref"); !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("CompareBase(unknown) error = %v, want ErrUsage", err)
+	}
+	if _, _, err := CompareBase(root, "HEAD"); err != nil {
+		t.Fatalf("valid base must keep working: %v", err)
+	}
+}
 
 func TestCollectIncludesUntrackedText(t *testing.T) {
 	root := t.TempDir()
