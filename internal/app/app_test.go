@@ -237,6 +237,28 @@ func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
 	}
 }
 
+// TestVerifyRejectsUnknownBaseAsUsage asserts the documented exit-code
+// contract for a typo'd --base: exit 2 with an AgentProof message, never 3
+// with raw git stderr.
+func TestVerifyRejectsUnknownBaseAsUsage(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+
+	code, err := Run([]string{"verify", "--base", "nonexistent-ref"}, "test")
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (fixable invocation)", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid --base") {
+		t.Fatalf("err = %v, want a message naming --base", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "fatal:") {
+		t.Fatalf("raw git stderr must not leak into the usage message: %v", err)
+	}
+}
+
 func TestRecordAndVerifyReportInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name string
