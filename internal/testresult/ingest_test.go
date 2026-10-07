@@ -8,6 +8,25 @@ import (
 	"github.com/ralabarta/agentproof/internal/evidence"
 )
 
+// TestIngestDeduplicatesDeclaredSpellings guards against declaring the same
+// artifact under different path spellings: the resolved file must ingest
+// once — one manifest record, counts taken once. Before the fix both
+// spellings ingested, inflating counts and producing duplicate manifest
+// locators that abort verify with an internal failure (exit 3).
+func TestIngestDeduplicatesDeclaredSpellings(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "results.jsonl"), "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.01}\n")
+
+	result, records := Ingest(root, []string{"results.jsonl", "./results.jsonl"}, true)
+
+	if result.PassedTests != 1 {
+		t.Fatalf("same file under two spellings must count once, got PassedTests=%d", result.PassedTests)
+	}
+	if len(records) != 1 {
+		t.Fatalf("same file under two spellings must produce one record, got %d: %#v", len(records), records)
+	}
+}
+
 func TestIngestGoTestJSON(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "test.jsonl"), "{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.01}\n{\"Action\":\"skip\",\"Package\":\"example\",\"Test\":\"TestTwo\"}\n")

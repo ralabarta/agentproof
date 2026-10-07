@@ -43,8 +43,20 @@ func Ingest(root string, declared []string, requireTests bool) (evidence.TestRes
 	result := evidence.TestResult{Ingested: true, Passed: true}
 	records := make([]evidence.Record, 0, len(declared))
 	var totalBytes int64
+	seenPaths := map[string]bool{}
 	for _, declaredPath := range declared {
 		artifact, size := ingestOne(root, declaredPath, maxTotalBytes-totalBytes)
+		// The same file may be declared under different spellings
+		// (results.jsonl vs ./results.jsonl, abs vs rel): ingest resolves
+		// every spelling to one repository-relative path, so a repeat must
+		// neither double-count results nor emit a duplicate manifest locator
+		// (which Identity rejects and turns verify into an internal failure).
+		if artifact.Path != "" && seenPaths[artifact.Path] {
+			continue
+		}
+		if artifact.Path != "" {
+			seenPaths[artifact.Path] = true
+		}
 		totalBytes += size
 		if result.DurationMS > math.MaxInt64-artifact.DurationMS {
 			artifact.State = evidence.Unknown
