@@ -240,6 +240,44 @@ func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
 // TestVerifyRejectsUnknownBaseAsUsage asserts the documented exit-code
 // contract for a typo'd --base: exit 2 with an AgentProof message, never 3
 // with raw git stderr.
+// TestVerifyAcceptsDuplicateResultSpellings pins the exit-code contract: the
+// same artifact declared under two path spellings is one artifact, so verify
+// must succeed (exit 0) instead of dying on duplicate manifest locators
+// with an internal failure (exit 3).
+func TestVerifyAcceptsDuplicateResultSpellings(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	// gitRepo does not commit; HEAD must exist for --base HEAD.
+	if err := os.WriteFile(filepath.Join(root, "seed.txt"), []byte("seed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "seed.txt"}, {"commit", "-m", "seed"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "results.jsonl"),
+		[]byte("{\"Action\":\"pass\",\"Package\":\"example\",\"Test\":\"TestOne\",\"Elapsed\":0.01}\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	code, err := Run(
+		[]string{"verify", "--base", "HEAD", "--test-result", "results.jsonl", "--test-result", "./results.jsonl"},
+		"test",
+	)
+	if code != 0 {
+		t.Fatalf("code = %d (%v); same file under two spellings must verify cleanly, not fail internally", code, err)
+	}
+}
+
 func TestVerifyRejectsUnknownBaseAsUsage(t *testing.T) {
 	root := gitRepo(t)
 	chdir(t, root)
