@@ -49,12 +49,18 @@ func Run(cwd string) (Report, error) {
 		r.Findings = append(r.Findings, Finding{Name: "git-binary", Severity: SeverityOK})
 	}
 
-	// check 2: agentproof initialized
+	// check 2: agentproof initialized. A status.Read failure is itself a
+	// diagnosis: report it as an error finding instead of propagating raw —
+	// propagation exits 3, indistinguishable from doctor crashing — and never
+	// read the zero-value State as "not initialized".
 	s, err := status.Read(cwd)
 	if err != nil {
-		return r, err
-	}
-	if !s.Initialized {
+		r.Findings = append(r.Findings, Finding{
+			Name:     "agentproof-state",
+			Severity: SeverityError,
+			Detail:   fmt.Sprintf("cannot read AgentProof state: %v", err),
+		})
+	} else if !s.Initialized {
 		r.Findings = append(r.Findings, Finding{
 			Name:     "agentproof-init",
 			Severity: SeverityWarn,
