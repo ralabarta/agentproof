@@ -244,6 +244,25 @@ func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
 // same artifact declared under two path spellings is one artifact, so verify
 // must succeed (exit 0) instead of dying on duplicate manifest locators
 // with an internal failure (exit 3).
+// TestDoctorExitsOneOnUnreadableState pins the exit-code contract: doctor's
+// diagnoses are 0 (healthy) or 1 (unhealthy); an unreadable layout is an
+// unhealthy diagnosis, never exit 3 ("doctor itself crashed").
+func TestDoctorExitsOneOnUnreadableState(t *testing.T) {
+	root := t.TempDir()
+	chdir(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".agentproof"), []byte("stray"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, err := Run([]string{"doctor"}, "test")
+	if err != nil {
+		t.Fatalf("doctor must diagnose without erroring: %v", err)
+	}
+	if code != 1 {
+		t.Fatalf("code = %d, want 1 (unhealthy diagnosis)", code)
+	}
+}
+
 func TestVerifyAcceptsDuplicateResultSpellings(t *testing.T) {
 	root := gitRepo(t)
 	chdir(t, root)

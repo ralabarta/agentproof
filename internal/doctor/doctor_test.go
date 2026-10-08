@@ -109,6 +109,69 @@ func TestDoctor_UninitializedOmitsConfigFinding(t *testing.T) {
 	}
 }
 
+// TestDoctorReportsUnreadableStateAsErrorFinding guards the diagnostic
+// contract: when status.Read fails, doctor must diagnose — an
+// agentproof-state error finding with Healthy=false (command exit 1) — not
+// propagate the raw errno and exit 3 like a crash. The zero-value State must
+// also never be misread as "not initialized".
+func TestDoctorReportsUnreadableStateAsErrorFinding(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{
+		{
+			name: "metadata path is a stray file",
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, ".agentproof"), []byte("stray"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "runs path is a file",
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+				apDir := filepath.Join(dir, ".agentproof")
+				if err := os.MkdirAll(apDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(apDir, "config.json"), []byte(`{}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(apDir, "runs"), []byte("not a directory"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setup(t, dir)
+
+			report, err := doctor.Run(dir)
+			if err != nil {
+				t.Fatalf("doctor must diagnose, not crash: %v", err)
+			}
+			finding, ok := findFinding(report, "agentproof-state", doctor.SeverityError)
+			if !ok {
+				t.Fatalf("expected an agentproof-state error finding, got %#v", report.Findings)
+			}
+			if !strings.Contains(finding.Detail, "cannot read AgentProof state") {
+				t.Fatalf("finding detail = %q, want the state-read failure", finding.Detail)
+			}
+			if hasFinding(report, "agentproof-init", doctor.SeverityWarn) {
+				t.Fatal("unreadable state must not be misdiagnosed as not initialized")
+			}
+			if report.Healthy {
+				t.Fatal("unreadable state must make doctor unhealthy")
+			}
+		})
+	}
+}
+
 func TestDoctorRecommendsValidRunPurgeCommand(t *testing.T) {
 	dir := initialized(t)
 	runDir := filepath.Join(dir, ".agentproof", "runs", "abandoned")
