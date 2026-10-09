@@ -342,6 +342,27 @@ A recorded agent's own exit code is evidence inside the report; it never
 becomes AgentProof's exit code.`)
 }
 
+// displayObjective collapses the stored objective to one printable line for
+// the runs table. The evidence data keeps its newlines — record stores a
+// pasted multi-line objective verbatim — but this CLI echo must not split
+// the fixed-width table or carry control bytes into the terminal; the report
+// layers apply the same contract through report.mdText/sanitize.
+func displayObjective(objective string) string {
+	var b strings.Builder
+	b.Grow(len(objective))
+	for _, r := range objective {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			b.WriteByte(' ')
+		case r < 0x20 || r == 0x7f:
+			// drop remaining control bytes (escapes, bells, ...)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func runsCommand(args []string) (int, error) {
 	fs := flag.NewFlagSet("runs", flag.ContinueOnError)
 	help, err := parseCommandFlags(fs, args)
@@ -368,7 +389,7 @@ func runsCommand(args []string) (int, error) {
 	}
 	fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", "ID", "STATE", "AGENT", "OBJECTIVE")
 	for _, r := range runs {
-		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, r.Objective)
+		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, displayObjective(r.Objective))
 	}
 	return 0, nil
 }

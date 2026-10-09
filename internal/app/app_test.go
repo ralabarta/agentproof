@@ -14,6 +14,56 @@ import (
 	"github.com/ralabarta/agentproof/internal/completion"
 )
 
+// TestRunsCollapsesMultilineObjectiveForDisplay guards the display contract:
+// record keeps multi-line objectives in the evidence data, but the runs table
+// must stay one row per run with a single-line, control-free objective so a
+// pasted task description cannot break column alignment or inject terminal
+// escapes (the report layers already sanitize/escape; this is the only raw
+// CLI echo).
+func TestRunsCollapsesMultilineObjectiveForDisplay(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	objective := "line one\nline two\x1b[31m"
+	if code, err := Run([]string{"record", "--objective", objective, "--", "true"}, "test"); code != 0 {
+		t.Fatalf("record should succeed: got %d (%v)", code, err)
+	}
+
+	output := captureStdout(t, func() {
+		if code, err := Run([]string{"runs"}, "test"); code != 0 {
+			t.Fatalf("runs should succeed: got %d (%v)", code, err)
+		}
+	})
+	if strings.Contains(output, "line one\nline two") {
+		t.Fatalf("raw newline must not split the table row:\n%s", output)
+	}
+	if strings.Contains(output, "\x1b") {
+		t.Fatalf("control bytes must not reach the terminal: %q", output)
+	}
+	if !strings.Contains(output, "line one line two") {
+		t.Fatalf("expected a collapsed objective, got:\n%s", output)
+	}
+	if lines := strings.Split(strings.TrimRight(output, "\n"), "\n"); len(lines) != 2 {
+		t.Fatalf("expected header + exactly one run row, got %d lines:\n%s", len(lines), output)
+	}
+
+	// Display-only: the stored evidence objective keeps its original newline.
+	runsDir := filepath.Join(root, ".agentproof", "runs")
+	entries, err := os.ReadDir(runsDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected one recorded run: %v (%#v)", err, entries)
+	}
+	stored, err := os.ReadFile(filepath.Join(runsDir, entries[0].Name(), "record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stored), `line one\nline two`) {
+		t.Fatalf("stored objective must keep the newline (JSON-escaped), got: %s", stored)
+	}
+}
+
 func TestRootHelpListsPublicCommands(t *testing.T) {
 	output := captureStdout(t, func() {
 		if code, err := Run([]string{"--help"}, "test"); code != 0 || err != nil {
