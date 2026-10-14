@@ -151,6 +151,48 @@ func TestAnalyzeExtendsCycleTerminatesAndBareTargetsSkipped(t *testing.T) {
 	})
 }
 
+// TestAnalyzeKeepsEdgeWhenRelativeTargetDeleted guards the deletion case:
+// relative imports are never external packages, so when the target file is
+// gone the importer must still receive the component edge — deletion is the
+// canonical breaking change and the importer is exactly who is affected.
+// Before the fix the index-based resolver returned "" and the edge vanished.
+func TestAnalyzeKeepsEdgeWhenRelativeTargetDeleted(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "src", "api", "route.ts"), "import { auth } from '../auth';\n")
+	// src/auth/index.ts is intentionally absent (already deleted)
+
+	result := Analyze(root, []evidence.Change{{Path: "src/auth/index.ts", Status: "deleted"}})
+
+	if !contains(result.AffectedComponents, "src/api") {
+		t.Fatalf("importer of deleted module must be affected: %#v", result.AffectedComponents)
+	}
+	wantEdge := evidence.Edge{From: "src/api", To: "src/auth"}
+	if !containsEdge(result.Edges, wantEdge) {
+		t.Fatalf("expected dependency edge %#v: %#v", wantEdge, result.Edges)
+	}
+}
+
+// TestAnalyzeKeepsEdgeWhenPythonPackageDeleted is the Python counterpart:
+// pythonSpecifiers emits all-dots concatenations (from .. import util ->
+// "..util"), so the module-level relative spec must keep its edge when the
+// target file is gone — pkg/svc -> pkg at the same component level as the
+// existing-file case (component(pkg/util.py) = "pkg").
+func TestAnalyzeKeepsEdgeWhenPythonPackageDeleted(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "pkg", "svc", "main.py"), "from .. import util\n")
+	// pkg/util.py is intentionally absent (already deleted)
+
+	result := Analyze(root, []evidence.Change{{Path: "pkg/util.py", Status: "deleted"}})
+
+	if !contains(result.AffectedComponents, "pkg/svc") {
+		t.Fatalf("importer of deleted python module must be affected: %#v", result.AffectedComponents)
+	}
+	wantEdge := evidence.Edge{From: "pkg/svc", To: "pkg"}
+	if !containsEdge(result.Edges, wantEdge) {
+		t.Fatalf("expected dependency edge %#v: %#v", wantEdge, result.Edges)
+	}
+}
+
 func TestAnalyzeResolvesTypeScriptModuleIndexImports(t *testing.T) {
 	tests := []struct {
 		name      string

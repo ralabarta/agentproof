@@ -104,17 +104,31 @@ func pythonSpecifiers(content string) []string {
 // resolveWeb maps a TypeScript/JavaScript specifier to a repository-relative
 // file. Bare specifiers stay unresolved unless a tsconfig alias or baseUrl maps
 // them into the repository, so npm dependencies never enter the graph.
+// Relative and alias-matched specifiers whose target is MISSING (the module
+// was deleted) keep a best-effort path instead of being dropped: relative
+// imports are never external packages, and a tsconfig paths match is
+// first-party by configuration — losing the edge would hide exactly the
+// importers a deletion breaks.
 func resolveWeb(files map[string]bool, aliases *webAliases, fromRel, spec string) string {
 	if strings.HasPrefix(spec, ".") {
-		return webCandidate(files, path.Join(path.Dir(fromRel), spec))
+		base := path.Join(path.Dir(fromRel), spec)
+		if resolved := webCandidate(files, base); resolved != "" {
+			return resolved
+		}
+		return missingWebTarget(base)
 	}
+	var missing string
 	for _, rule := range aliases.rules {
 		if rule.wildcard {
 			if !strings.HasPrefix(spec, rule.from) {
 				continue
 			}
-			if resolved := webCandidate(files, path.Join(rule.to, strings.TrimPrefix(spec, rule.from))); resolved != "" {
+			target := path.Join(rule.to, strings.TrimPrefix(spec, rule.from))
+			if resolved := webCandidate(files, target); resolved != "" {
 				return resolved
+			}
+			if missing == "" {
+				missing = missingWebTarget(target)
 			}
 			continue
 		}
@@ -122,12 +136,39 @@ func resolveWeb(files map[string]bool, aliases *webAliases, fromRel, spec string
 			if resolved := webCandidate(files, rule.to); resolved != "" {
 				return resolved
 			}
+			if missing == "" {
+				missing = missingWebTarget(rule.to)
+			}
 		}
 	}
 	if aliases.baseURL != "" {
-		return webCandidate(files, path.Join(aliases.baseURL, spec))
+		if resolved := webCandidate(files, path.Join(aliases.baseURL, spec)); resolved != "" {
+			return resolved
+		}
+	}
+	if missing != "" {
+		return missing
 	}
 	return ""
+}
+
+// missingWebTarget returns a best-effort path inside base for a first-party
+// specifier whose target no longer exists, shaped so component() computes the
+// same component as the existing-file case: a file-like last segment
+// (src/auth.ts, src/data.json) is the file itself (component = its
+// directory), anything else is treated as a package directory
+// (base/index.ts, component = base). Best-effort only — a dotted directory
+// name can land one level high; bounded syntactic observation, never a claim
+// the file exists.
+func missingWebTarget(base string) string {
+	base = path.Clean(base)
+	if base == "." || base == "/" || strings.HasPrefix(base, "..") {
+		return ""
+	}
+	if strings.Contains(path.Base(base), ".") {
+		return base
+	}
+	return path.Join(base, "index.ts")
 }
 
 func webCandidate(files map[string]bool, base string) string {
@@ -159,7 +200,10 @@ func webCandidate(files map[string]bool, base string) string {
 
 // resolvePython maps a module path to a repository file. Relative imports are
 // resolved against the importing package; absolute ones are tried at the
-// repository root and under a src/ layout.
+// repository root and under a src/ layout. A relative specifier whose target
+// is MISSING (the module was deleted) keeps a best-effort path: relative
+// imports never refer to site-packages, so dropping the edge would hide the
+// importers the deletion breaks.
 func resolvePython(files map[string]bool, fromRel, spec string) string {
 	if spec == "" {
 		return ""
@@ -175,15 +219,48 @@ func resolvePython(files map[string]bool, fromRel, spec string) string {
 		}
 		rest := strings.TrimLeft(spec, ".")
 		if rest == "" {
-			return pythonCandidate(files, base)
+			if resolved := pythonCandidate(files, base); resolved != "" {
+				return resolved
+			}
+			// Pure-dots specs denote package imports; the package form
+			// (base/__init__.py) matches pythonCandidate's second priority.
+			return missingPythonPackage(base)
 		}
-		return pythonCandidate(files, path.Join(base, strings.ReplaceAll(rest, ".", "/")))
+		joined := path.Join(base, strings.ReplaceAll(rest, ".", "/"))
+		if resolved := pythonCandidate(files, joined); resolved != "" {
+			return resolved
+		}
+		return missingPythonTarget(joined)
 	}
 	relative := strings.ReplaceAll(spec, ".", "/")
 	if resolved := pythonCandidate(files, relative); resolved != "" {
 		return resolved
 	}
 	return pythonCandidate(files, path.Join("src", relative))
+}
+
+// missingPythonTarget returns a best-effort path for a relative python
+// specifier whose target no longer exists, shaped like pythonCandidate's own
+// priority (.py before /__init__.py) so component() matches the
+// existing-file case for single-module targets; package-only targets can
+// land one level high — best-effort, never a claim the file exists.
+func missingPythonTarget(base string) string {
+	base = path.Clean(base)
+	if base == "." || base == "/" || strings.HasPrefix(base, "..") {
+		return ""
+	}
+	return base + ".py"
+}
+
+// missingPythonPackage is the package-form fallback for pure-dots specs
+// (from . import x): base/__init__.py keeps component() at the package
+// directory, matching pythonCandidate's package resolution.
+func missingPythonPackage(base string) string {
+	base = path.Clean(base)
+	if base == "." || base == "/" || strings.HasPrefix(base, "..") {
+		return ""
+	}
+	return path.Join(base, "__init__.py")
 }
 
 func pythonCandidate(files map[string]bool, base string) string {
