@@ -58,6 +58,16 @@ func Init(root string, force bool) error {
 			return fmt.Errorf("%w: %s exists and is not a directory; remove it and re-run agentproof init", apperr.ErrUsage, DirName)
 		}
 	}
+	// Metadata FILES may be symlinks too: safefile.Write refuses to replace
+	// them mid-write (raw error, exit 3 on the force path) and the exists
+	// check without --force reports a dead-end "use --force". Refuse both
+	// files before any write so neither route misroutes a fixable state.
+	for _, name := range []string{"config.json", ".gitignore"} {
+		file := filepath.Join(dir, name)
+		if info, err := os.Lstat(file); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s is a symlink; remove it and re-run agentproof init", apperr.ErrUsage, filepath.Join(DirName, name))
+		}
+	}
 	path := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(path); err == nil && !force {
 		return fmt.Errorf("%w: already initialized; use --force to replace the configuration", apperr.ErrUsage)

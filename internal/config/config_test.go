@@ -65,6 +65,65 @@ func TestInitRejectsNonDirectoryMetadataPath(t *testing.T) {
 	}
 }
 
+// TestInitRejectsSymlinkedMetadataFiles completes the init-guard family
+// (#109 dir symlink, #111 non-directory): a symlinked config.json or
+// .gitignore inside a real .agentproof directory is a fixable state, so
+// Init must refuse it with ErrUsage before any write — never a raw safefile
+// error at exit 3 (force path) or the "use --force" dead end (no-force
+// path). Outside targets stay untouched and nothing else is created.
+func TestInitRejectsSymlinkedMetadataFiles(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{name: "config.json is a symlink", file: "config.json"},
+		{name: ".gitignore is a symlink", file: ".gitignore"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			outside := t.TempDir()
+			target := filepath.Join(outside, tt.file)
+			if err := os.WriteFile(target, []byte("original\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(root, DirName)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, filepath.Join(dir, tt.file)); err != nil {
+				t.Skipf("os.Symlink unavailable: %v", err)
+			}
+
+			err := Init(root, false)
+			if !errors.Is(err, apperr.ErrUsage) {
+				t.Fatalf("Init() error = %v, want ErrUsage", err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+				t.Fatalf("Init() error = %v, want a message naming the symlink", err)
+			}
+			contents, readErr := os.ReadFile(target)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(contents) != "original\n" {
+				t.Fatalf("outside target must be untouched, got %q", contents)
+			}
+			sibling := ".gitignore"
+			if tt.file == ".gitignore" {
+				sibling = "config.json"
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, sibling)); statErr == nil {
+				t.Fatalf("init must not create %s when refusing a symlinked %s", sibling, tt.file)
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, "runs")); statErr == nil {
+				t.Fatal("init must not create runs/ when refusing a symlinked metadata file")
+			}
+		})
+	}
+}
+
 func TestInitExistingConfigDoesNotCreateFilesystemEntries(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, DirName)

@@ -270,6 +270,33 @@ func TestInitReportsNonDirectoryMetadataAsUsage(t *testing.T) {
 	}
 }
 
+// TestInitRejectsSymlinkedConfigFile pins the command-level contract for the
+// force path: --force over a symlinked config.json is a fixable usage error
+// naming the symlink (exit 2), never the raw safefile refusal at exit 3.
+func TestInitRejectsSymlinkedConfigFile(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	outside := t.TempDir()
+	target := filepath.Join(outside, "config.json")
+	if err := os.WriteFile(target, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".agentproof"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, ".agentproof", "config.json")); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+
+	code, err := Run([]string{"init", "--force"}, "test")
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (fixable invocation)", code)
+	}
+	if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+		t.Fatalf("err = %v, want a message naming the symlink", err)
+	}
+}
+
 func TestInitRejectsSymlinkedAgentProofDir(t *testing.T) {
 	root := gitRepo(t)
 	chdir(t, root)
