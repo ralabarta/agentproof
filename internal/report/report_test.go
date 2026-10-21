@@ -32,6 +32,50 @@ func TestMarkdownEscapesInlineActiveCharacters(t *testing.T) {
 	}
 }
 
+// An artifact the loader could not ingest is classified unknown, but its
+// recorded cause never reaches the report, so the reader only learns
+// "not passing (0 passed, 0 failed, 0 skipped)" with no explanation of why.
+// The report must name each unobserved artifact and its reason, in both
+// formats, because the ingestion contract records that reason for review.
+func TestReportNamesUnobservedTestArtifactReasons(t *testing.T) {
+	run := evidence.Run{
+		Objective: "probe",
+		Status:    "failed",
+		Tests: evidence.TestResult{
+			Ingested: true,
+			Passed:   false,
+			Summary:  "not passing: 0 passed, 0 failed, 0 skipped",
+			Artifacts: []evidence.TestArtifact{
+				{Path: "results.xml", Format: "junit-xml", State: evidence.Unknown, Reason: "malformed JUnit XML: <id | EOF"},
+				{Path: "missing.xml", Format: "junit-xml", State: evidence.Missing, Reason: "declared test result does not exist"},
+			},
+		},
+	}
+	markdown := string(Markdown(run, strings.Repeat("a", 64)))
+	if !strings.Contains(markdown, "Test evidence is not passing") {
+		t.Fatalf("summary bullet missing:\n%s", markdown)
+	}
+	for _, want := range []string{
+		"Artifact `results.xml` (unknown): malformed JUnit XML: \\<id \\| EOF",
+		"Artifact `missing.xml` (missing): declared test result does not exist",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("markdown does not name an unobserved artifact and its reason: %q\n%s", want, markdown)
+		}
+	}
+	html, err := HTML(run, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(html)
+	if !strings.Contains(text, "(unknown): malformed JUnit XML") || !strings.Contains(text, "(missing): declared test result does not exist") {
+		t.Fatalf("HTML does not name unobserved artifact reasons:\n%s", text)
+	}
+	if strings.Contains(text, "<id | EOF</") && !strings.Contains(text, "&lt;id") {
+		t.Fatalf("HTML echoed the hostile reason unescaped:\n%s", text)
+	}
+}
+
 func TestReportsEscapeHostilePresentationData(t *testing.T) {
 	run := evidence.Run{
 		Objective:    "<script>alert(1)</script>\n| injected",
