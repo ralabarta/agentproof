@@ -81,6 +81,74 @@ func TestDoctor_InvalidConfigIsUnhealthy(t *testing.T) {
 	}
 }
 
+// TestDoctor_InvalidRunPointerIsUnhealthy extends the diagnostic contract in
+// the same direction as config: verify fails outright on a latest.json pointer
+// that exists but does not load, yet status (and therefore doctor) never parse
+// it, so doctor would report green while verify is unusable. Doctor must
+// diagnose the broken pointer instead.
+func TestDoctor_InvalidRunPointerIsUnhealthy(t *testing.T) {
+	cases := []struct {
+		name  string
+		bytes string
+	}{
+		{"malformed JSON", `{"record":`},
+		{"wrong shape", `[1,2,3]`},
+		{"empty record key", `{"record":""}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			apDir := filepath.Join(dir, ".agentproof")
+			if err := os.MkdirAll(apDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.Init(dir, false); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(apDir, "latest.json"), []byte(tc.bytes), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			report, err := doctor.Run(dir)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			finding, ok := findFinding(report, "agentproof-state", doctor.SeverityError)
+			if !ok {
+				t.Fatalf("expected an agentproof-state error finding for a broken run pointer, got %#v", report.Findings)
+			}
+			if !strings.Contains(finding.Detail, "latest run pointer") {
+				t.Fatalf("state finding detail must name the run pointer, got %q", finding.Detail)
+			}
+			if report.Healthy {
+				t.Fatal("a broken run pointer must make doctor unhealthy")
+			}
+		})
+	}
+}
+
+// TestDoctor_MissingRunPointerStaysGreen keeps the new check from breaking the
+// normal fresh-init flow: latest.json is only created after the first record,
+// so its absence must not produce a state finding.
+func TestDoctor_MissingRunPointerStaysGreen(t *testing.T) {
+	dir := t.TempDir()
+	apDir := filepath.Join(dir, ".agentproof")
+	if err := os.MkdirAll(apDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Init(dir, false); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := doctor.Run(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if finding, ok := findFinding(report, "agentproof-state", doctor.SeverityError); ok {
+		t.Fatalf("missing run pointer must not be diagnosed as broken, got %#v", finding)
+	}
+}
+
 func TestDoctor_ValidConfigReportsConfigOK(t *testing.T) {
 	dir := t.TempDir()
 	if err := config.Init(dir, false); err != nil {
