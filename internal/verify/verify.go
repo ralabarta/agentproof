@@ -148,13 +148,12 @@ func loadRun(root, base string) (evidence.Run, string, error) {
 			Claims: []evidence.Claim{{Type: "git-association", Statement: "Changes are associated with a Git range; agent authorship is unknown.", Confidence: evidence.ConfidenceObserved, Evidence: base + "...HEAD"}},
 		}, patch, nil
 	}
-	latestBytes, err := os.ReadFile(filepath.Join(root, config.DirName, "latest.json"))
-	if err != nil {
+	latest, found, pointerErr := LoadRunPointer(root)
+	if !found {
 		return evidence.Run{}, "", fmt.Errorf("%w: no recorded session found; run agentproof record or pass --base", apperr.ErrUsage)
 	}
-	var latest map[string]string
-	if json.Unmarshal(latestBytes, &latest) != nil || latest["record"] == "" {
-		return evidence.Run{}, "", errors.New("invalid .agentproof/latest.json")
+	if pointerErr != nil {
+		return evidence.Run{}, "", pointerErr
 	}
 	recordPath, err := containedPath(filepath.Join(root, config.DirName), latest["record"])
 	if err != nil {

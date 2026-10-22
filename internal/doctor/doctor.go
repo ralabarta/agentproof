@@ -10,6 +10,7 @@ import (
 	"github.com/ralabarta/agentproof/internal/purge"
 	"github.com/ralabarta/agentproof/internal/record"
 	"github.com/ralabarta/agentproof/internal/status"
+	"github.com/ralabarta/agentproof/internal/verify"
 )
 
 // Severity classifies the impact of a finding.
@@ -80,6 +81,17 @@ func Run(cwd string) (Report, error) {
 			})
 		} else {
 			r.Findings = append(r.Findings, Finding{Name: "agentproof-config", Severity: SeverityOK})
+		}
+		// check 6: the latest run pointer. verify loads .agentproof/latest.json
+		// directly while status never parses it, so a pointer that exists but
+		// does not load leaves this doctor green while verify is unusable;
+		// diagnose it here, mirroring the broken-config contract above.
+		if _, found, invalid := verify.LoadRunPointer(cwd); found && invalid != nil {
+			r.Findings = append(r.Findings, Finding{
+				Name:     "agentproof-state",
+				Severity: SeverityError,
+				Detail:   fmt.Sprintf("cannot load the latest run pointer: %v; verify will fail until it is fixed or a new run is recorded", invalid),
+			})
 		}
 		// check 4: abandoned runs
 		if s.AbandonedRuns > 0 {
