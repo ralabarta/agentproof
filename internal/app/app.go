@@ -342,15 +342,17 @@ A recorded agent's own exit code is evidence inside the report; it never
 becomes AgentProof's exit code.`)
 }
 
-// displayObjective collapses the stored objective to one printable line for
-// the runs table. The evidence data keeps its newlines — record stores a
-// pasted multi-line objective verbatim — but this CLI echo must not split
-// the fixed-width table or carry control bytes into the terminal; the report
-// layers apply the same contract through report.mdText/sanitize.
-func displayObjective(objective string) string {
+// displayCell collapses a stored, untrusted runs-table value to one printable
+// line for the CLI echo. The evidence data keeps its newlines — record stores
+// a pasted multi-line objective verbatim, and the lifecycle providers persist
+// raw status and adapter strings — but this CLI echo must not split the
+// fixed-width table or carry control bytes into the terminal, whatever cell
+// they land in (ID, STATE, AGENT, OBJECTIVE); the report layers apply the
+// same contract through report.mdText/sanitize.
+func displayCell(value string) string {
 	var b strings.Builder
-	b.Grow(len(objective))
-	for _, r := range objective {
+	b.Grow(len(value))
+	for _, r := range value {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			b.WriteByte(' ')
@@ -389,7 +391,7 @@ func runsCommand(args []string) (int, error) {
 	}
 	fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", "ID", "STATE", "AGENT", "OBJECTIVE")
 	for _, r := range runs {
-		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", r.ID, r.State, r.Agent, displayObjective(r.Objective))
+		fmt.Fprintf(os.Stdout, "%-36s  %-12s  %-10s  %s\n", displayCell(r.ID), displayCell(r.State), displayCell(r.Agent), displayCell(r.Objective))
 	}
 	return 0, nil
 }
