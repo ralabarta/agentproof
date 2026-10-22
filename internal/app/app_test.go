@@ -64,6 +64,54 @@ func TestRunsCollapsesMultilineObjectiveForDisplay(t *testing.T) {
 	}
 }
 
+// TestRunsCollapsesUntrustedStateAndAgentForDisplay extends the same display
+// contract to the table's other untrusted cells: state.json and record.json
+// feed the STATE and AGENT columns, so their values must collapse to one
+// printable line exactly like the objective's; otherwise edited or corrupt
+// lifecycle files split the fixed-width row and inject terminal escapes.
+func TestRunsCollapsesUntrustedStateAndAgentForDisplay(t *testing.T) {
+	root := gitRepo(t)
+	chdir(t, root)
+	if code, err := Run([]string{"init"}, "test"); code != 0 {
+		t.Fatalf("init should succeed: got %d (%v)", code, err)
+	}
+	runsDir := filepath.Join(root, ".agentproof", "runs")
+	cancelled := filepath.Join(runsDir, "bogus2026Z")
+	if err := os.MkdirAll(cancelled, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cancelled, "state.json"),
+		[]byte(`{"status":"va\u0007x\u001bes\u000aBREAK"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cancelled, "record.json"),
+		[]byte(`{"objective":"ok","agent":"bad\u0007agent\u001bname","startedAt":"0001-01-01T00:00:00Z","status":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() {
+		if code, err := Run([]string{"runs"}, "test"); code != 0 {
+			t.Fatalf("runs should succeed: got %d (%v)", code, err)
+		}
+	})
+	if strings.ContainsAny(output, "\x1b\x07") {
+		t.Fatalf("control bytes must not reach the terminal: %q", output)
+	}
+	if strings.Contains(output, "BREAK\n") || strings.Contains(output, "\nBREAK") {
+		t.Fatalf("raw newline in state must not split the table row:\n%s", output)
+	}
+	if !strings.Contains(output, "vaxes BREAK") {
+		t.Fatalf("expected a collapsed state value, got:\n%s", output)
+	}
+	if !strings.Contains(output, "badagentname") {
+		t.Fatalf("expected a collapsed agent value, got:\n%s", output)
+	}
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected header + one planted row, got %d lines:\n%s", len(lines), output)
+	}
+}
+
 func TestRootHelpListsPublicCommands(t *testing.T) {
 	output := captureStdout(t, func() {
 		if code, err := Run([]string{"--help"}, "test"); code != 0 || err != nil {
