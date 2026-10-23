@@ -98,6 +98,13 @@ func runs(root string, opts Options, beforeDelete func(string)) Result {
 		dir := filepath.Join(runs, entry.Name())
 		dead, stateErr := deadRun(root, dir)
 		if stateErr != nil {
+			if errors.Is(stateErr, os.ErrNotExist) {
+				// No lifecycle state file: the Runs contract never touches
+				// such a run, because a record in progress could still be
+				// between creating the directory and writing its first state,
+				// so it is skipped — neither selected nor counted failed.
+				continue
+			}
 			result.Failed++
 			continue
 		}

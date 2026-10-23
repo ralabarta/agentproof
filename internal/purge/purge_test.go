@@ -66,6 +66,42 @@ func TestRawCountsOtherWalkErrors(t *testing.T) {
 	}
 }
 
+func TestRunsSkipsRunDirWithoutLifecycleState(t *testing.T) {
+	root := t.TempDir()
+	partial := filepath.Join(root, ".agentproof", "runs", "partial2026Z")
+	if err := os.MkdirAll(partial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Runs(root, Options{OlderThan: 0})
+	if result.Selected != 0 || result.Failed != 0 {
+		t.Fatalf("a run dir without a lifecycle state file must be skipped, not failed: %#v", result)
+	}
+	if _, err := os.Stat(partial); err != nil {
+		t.Fatalf("the stateless run dir must survive an untouching preview: %v", err)
+	}
+}
+
+// TestRunsConfirmSkipsRunDirWithoutLifecycleState pins the same contract at
+// the destructive boundary: without a lifecycle state file there is no
+// evidence status to classify and no run ID to match a live record's lock,
+// so --confirm must neither delete the directory nor count it failed.
+func TestRunsConfirmSkipsRunDirWithoutLifecycleState(t *testing.T) {
+	root := t.TempDir()
+	partial := filepath.Join(root, ".agentproof", "runs", "partial2026Z")
+	if err := os.MkdirAll(partial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Runs(root, Options{OlderThan: 0, Confirm: true})
+	if result.Selected != 0 || result.Deleted != 0 || result.Failed != 0 {
+		t.Fatalf("confirm must not delete or fail a run dir without a lifecycle state file: %#v", result)
+	}
+	if _, err := os.Stat(partial); err != nil {
+		t.Fatalf("the stateless run dir must survive confirm: %v", err)
+	}
+}
+
 func writeRun(t *testing.T, root, name, status string) string {
 	t.Helper()
 	dir := filepath.Join(root, ".agentproof", "runs", name)
